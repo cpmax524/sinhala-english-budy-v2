@@ -1,17 +1,21 @@
-# Memory Extraction Guide: Signal vs Noise
+# Memory Extraction Guide
 
-## Examples of Noise (DO NOT SAVE)
-- "I'm so tired today." (Transient state)
-- "I think I'll have chicken for dinner." (One-off event)
-- "It's raining outside." (Irrelevant)
-- "I had a headache yesterday." (Transient)
+This guide helps you differentiate between transient conversational "noise" and meaningful "signal" that should be extracted and saved to long-term memory.
 
-## Examples of Signal (SAVE THESE)
-- "I'm vegan." -> `fact`: "User is vegan", `category`: "Diet/Preferences"
-- "I work as a software engineer at a bank." -> `fact`: "User is a software engineer at a bank", `category`: "Work"
-- "My dog's name is Charlie." -> `fact`: "User has a dog named Charlie", `category`: "Pets/Family"
-- "I really love playing tennis on weekends." -> `fact`: "User loves playing tennis on weekends", `category`: "Hobbies"
-- "I'm studying for my IELTS exam next month." -> `fact`: "User is preparing for IELTS exam", `category`: "Goals"
+## Examples of NOISE vs. SIGNAL
 
-## How to extract
-Listen carefully to the user's turn. If they share a new piece of information that qualifies as signal, call `extract_and_save_memory_async` with the simple fact and its category. Continue the conversation naturally in your response text without mentioning the extraction.
+### ❌ NOISE (Do not save)
+- "I'm hungry right now"
+- "It's raining outside"
+- "Okay", "Yes", "I see"
+- "I have a meeting in 10 minutes"
+- "I went to the store today"
+- "I feel tired"
+
+### ✅ SIGNAL (Save these)
+- "I am a vegan" -> `category: health/personal`
+- "My sister is getting married next month" -> `category: family`
+- "I work at Dialog as an engineer" -> `category: work`
+- "I'm preparing for the IELTS exam" -> `category: education/goal`
+- "I love playing cricket on weekends" -> `category: hobby`
+- "I have two dogs named Rex and Bella" -> `category: personal`

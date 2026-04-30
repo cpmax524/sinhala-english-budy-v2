@@ -2,11 +2,12 @@
 Database models and connection setup for the application.
 """
 
+import enum
 import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, select, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -14,6 +15,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy declarative models."""
     pass
+
+
+class CorrectionPreference(str, enum.Enum):
+    RECAST_ONLY = "recast_only"
+    INSTANT_PAUSE = "instant_pause"
 
 
 class User(Base):
@@ -33,9 +39,17 @@ class User(Base):
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    correction_preference: Mapped[str] = mapped_column(String, default="recast_only")
+    english_goal: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # Relationship to learning targets
     learning_targets: Mapped[list["LearningTarget"]] = relationship(
         "LearningTarget", back_populates="user", cascade="all, delete-orphan"
+    )
+
+    # Relationship to memories
+    memories: Mapped[list["UserMemory"]] = relationship(
+        "UserMemory", back_populates="user", cascade="all, delete-orphan"
     )
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,7 +66,34 @@ class User(Base):
             "call_count": self.call_count,
             "first_seen": self.first_seen.isoformat(),
             "last_seen": self.last_seen.isoformat(),
+            "correction_preference": self.correction_preference,
+            "english_goal": self.english_goal,
             "learning_targets": [lt.to_dict() for lt in self.learning_targets]
+        }
+
+
+class UserMemory(Base):
+    """Represents a long-term episodic memory for a user."""
+    __tablename__ = "user_memories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[str] = mapped_column(String, ForeignKey("users.telegram_id"))
+    memory_fact: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String, default="general")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_referenced: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    importance_score: Mapped[int] = mapped_column(Integer, default=1)
+
+    user: Mapped["User"] = relationship("User", back_populates="memories")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "memory_fact": self.memory_fact,
+            "category": self.category,
+            "created_at": self.created_at.isoformat(),
+            "last_referenced": self.last_referenced.isoformat(),
+            "importance_score": self.importance_score
         }
 
 
@@ -66,32 +107,24 @@ class LearningTarget(Base):
     user_mistake: Mapped[str] = mapped_column(Text, default="")
     correct_form: Mapped[str] = mapped_column(Text, default="")
     
+    mastery_level: Mapped[int] = mapped_column(Integer, default=0)
+    times_tested: Mapped[int] = mapped_column(Integer, default=0)
+    last_tested_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_test_due: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
     user: Mapped["User"] = relationship("User", back_populates="learning_targets")
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {
+            "id": self.id,
             "topic": self.topic,
             "user_mistake": self.user_mistake,
-            "correct_form": self.correct_form
+            "correct_form": self.correct_form,
+            "mastery_level": self.mastery_level,
+            "times_tested": self.times_tested,
+            "last_tested_date": self.last_tested_date.isoformat() if self.last_tested_date else None,
+            "next_test_due": self.next_test_due.isoformat() if self.next_test_due else None
         }
-
-
-class SessionState(Base):
-    """Stores ADK session state data as JSON."""
-    __tablename__ = "session_states"
-
-    session_id: Mapped[str] = mapped_column(String, primary_key=True)
-    user_id: Mapped[str] = mapped_column(String, nullable=False)
-    state_data: Mapped[str] = mapped_column(Text, default="{}") # Stored as JSON string
-
-    def get_state(self) -> dict[str, Any]:
-        try:
-            return json.loads(self.state_data)
-        except json.JSONDecodeError:
-            return {}
-
-    def set_state(self, state: dict[str, Any]) -> None:
-        self.state_data = json.dumps(state)
 
 
 # Database Connection Setup

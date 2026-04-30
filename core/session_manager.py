@@ -9,10 +9,9 @@ across multiple phone calls.
 import logging
 
 from google.adk.runners import Runner
-from google.adk.sessions import Session
+from google.adk.sessions import Session, DatabaseSessionService
 
-from core.db_session_service import DbSessionService
-
+from core.database import engine
 from core.user_store import UserStore
 
 logger = logging.getLogger(__name__)
@@ -23,13 +22,13 @@ class SessionManager:
     Manages ADK sessions keyed by Telegram user ID.
 
     Each caller gets a unique session identified by their Telegram user ID.
-    Session state persists across multiple calls (within the same process
-    lifetime when using DbSessionService).
+    Session state persists across multiple calls using the built-in ADK DatabaseSessionService.
     """
 
     def __init__(self, app_name: str = "app") -> None:
         self.app_name = app_name
-        self.session_service = DbSessionService()
+        # Use ADK's built-in service pointing to our same SQLite Engine
+        self.session_service = DatabaseSessionService(engine=engine)
         self.user_store = UserStore()
         self._runner: Runner | None = None
 
@@ -79,16 +78,20 @@ class SessionManager:
         # Load profile from user_store to sync with ADK state
         profile = await self.user_store.load_profile(user_id)
         
+        # Prefix core persistent properties with user: for clarity and persistence across sessions
         if profile:
             # User profile exists, inject into state
+            session.state["user:telegram_id"] = user_id
             session.state["user_name"] = profile.get("user_name", first_name)
             session.state["user_age"] = profile.get("user_age", 0)
             session.state["user_gender"] = profile.get("user_gender", "unknown")
             session.state["user_role"] = profile.get("user_role", "")
             session.state["user_interests"] = profile.get("user_interests", "")
             session.state["onboarding_complete"] = profile.get("onboarding_complete", "false")
-            session.state["english_level"] = profile.get("english_level", session.state.get("english_level", "assessing"))
-            session.state["learning_targets"] = profile.get("learning_targets", [])
+
+            session.state["user:english_level"] = profile.get("english_level", session.state.get("user:english_level", "assessing"))
+            session.state["user:correction_preference"] = profile.get("correction_preference", session.state.get("user:correction_preference", "recast_only"))
+            session.state["user:english_goal"] = profile.get("english_goal", session.state.get("user:english_goal", ""))
             
             # Increment call count only when explicitly requested
             call_count = profile.get("call_count", 0)
@@ -98,14 +101,18 @@ class SessionManager:
             session.state["is_returning_user"] = "true"
         else:
             # Completely new user
+            session.state["user:telegram_id"] = user_id
             session.state["user_name"] = first_name
             session.state["user_age"] = 0
             session.state["user_gender"] = "unknown"
             session.state["user_role"] = ""
             session.state["user_interests"] = ""
             session.state["onboarding_complete"] = "false"
-            session.state["english_level"] = "assessing"
-            session.state["learning_targets"] = []
+
+            session.state["user:english_level"] = "assessing"
+            session.state["user:correction_preference"] = "recast_only"
+            session.state["user:english_goal"] = ""
+
             session.state["call_count"] = 1 if increment_call else 0
             session.state["is_returning_user"] = "false"
 
@@ -153,13 +160,13 @@ class SessionManager:
         profile["user_role"] = session.state.get("user_role", profile.get("user_role"))
         profile["user_interests"] = session.state.get("user_interests", profile.get("user_interests"))
         profile["onboarding_complete"] = str(session.state.get("onboarding_complete", profile.get("onboarding_complete"))).lower()
-        profile["english_level"] = session.state.get("english_level", profile.get("english_level", "assessing"))
+
+        profile["english_level"] = session.state.get("user:english_level", profile.get("english_level", "assessing"))
+        profile["correction_preference"] = session.state.get("user:correction_preference", profile.get("correction_preference", "recast_only"))
+        profile["english_goal"] = session.state.get("user:english_goal", profile.get("english_goal", ""))
+
         profile["phone_number"] = session.state.get("phone_number", profile.get("phone_number"))
-        profile["learning_targets"] = session.state.get("learning_targets", profile.get("learning_targets", []))
         profile["call_count"] = int(session.state.get("call_count", profile.get("call_count", 1)))
 
         await self.user_store.save_profile(user_id, profile)
-        
-        # Also persist session state dict explicitly to DB
-        await self.session_service.persist_session_state(user_id, session.state)
-        logger.info("Session state saved to disk for user %s", user_id)
+        logger.info("Session state saved to DB for user %s", user_id)

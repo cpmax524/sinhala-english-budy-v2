@@ -14,11 +14,14 @@
 
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
-from core.db_session_service import DbSessionService
+from google.adk.sessions import DatabaseSessionService
+from core.database import DATABASE_URL
 from google.genai import types
 
 from app.agent import root_agent
 
+
+import asyncio
 
 def test_agent_stream() -> None:
     """
@@ -26,9 +29,9 @@ def test_agent_stream() -> None:
     Tests that the agent returns valid streaming responses.
     """
 
-    session_service = DbSessionService()
+    session_service = DatabaseSessionService(db_url=DATABASE_URL)
 
-    session = session_service.create_session_sync(user_id="test_user", app_name="test")
+    session = asyncio.run(session_service.create_session(user_id="test_user", app_name="test"))
     runner = Runner(agent=root_agent, session_service=session_service, app_name="test")
 
     message = types.Content(

@@ -31,10 +31,12 @@ from google.adk.models.google_llm import Gemini
 from google.adk.tools import google_search
 
 import pathlib
+import asyncio
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import skill_toolset
 
 from app.prompts import SYSTEM_INSTRUCTION
+from core.user_store import UserStore
 
 # ---------------------------------------------------------------------------
 # Environment setup for Google AI Studio (API Key mode)
@@ -142,6 +144,107 @@ def update_user_profile(
     return "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
 
 
+def extract_and_save_memory(
+    fact: str,
+    category: str,
+    callback_context: CallbackContext = None,
+) -> str:
+    """
+    Saves a personal fact about the user to long-term memory.
+    Call this silently when you learn something meaningful about the user.
+    Do NOT call for trivial/transient statements.
+
+    Args:
+        fact: The atomic fact to save (e.g., "User's sister is getting married next month")
+        category: Category of the fact (e.g., "personal", "work", "hobby", "family", "health", "education", "goal")
+    """
+    if not callback_context:
+        return "Error: runtime context missing."
+
+    user_id = callback_context.state.get("user:telegram_id", "")
+    if not user_id:
+        return "Error: No user ID in state."
+
+    if not fact or len(fact) > 200:
+        return "Error: Invalid fact length."
+
+    user_store = UserStore()
+
+    # We must run the async DB save without blocking the tool execution unnecessarily
+    # (Since this is a synchronous tool function wrapping an async db call)
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(user_store.save_memory(user_id, fact, category))
+    except RuntimeError:
+        # Fallback if no running loop
+        asyncio.run(user_store.save_memory(user_id, fact, category))
+
+    return "Memory successfully saved."
+
+
+def update_learning_progress(
+    target_id: int,
+    success: bool,
+    callback_context: CallbackContext = None,
+) -> str:
+    """
+    Updates the mastery level of a learning target after testing the user.
+    Call this after you naturally test a due learning target during conversation.
+
+    Args:
+        target_id: The ID of the learning target being tested.
+        success: True if the user got it right, False if they still made the mistake.
+    """
+    if not callback_context:
+        return "Error: runtime context missing."
+
+    user_store = UserStore()
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(user_store.update_learning_progress(target_id, success))
+    except RuntimeError:
+        asyncio.run(user_store.update_learning_progress(target_id, success))
+
+    return "Learning progress updated."
+
+
+def change_correction_style(
+    preference: str,
+    callback_context: CallbackContext = None,
+) -> str:
+    """
+    Changes how the user wants to be corrected during conversations.
+    Call this when the user explicitly asks to change their correction style.
+
+    Args:
+        preference: Either "recast_only" (correct naturally in replies) or
+                    "instant_pause" (pause and explain the mistake directly).
+    """
+    if not callback_context:
+        return "Error: runtime context missing."
+
+    if preference not in ("recast_only", "instant_pause"):
+        return f"Error: Invalid preference '{preference}'."
+
+    user_id = callback_context.state.get("user:telegram_id", "")
+    if not user_id:
+        return "Error: No user ID in state."
+
+    # Update local state immediately
+    callback_context.state["user:correction_preference"] = preference
+
+    # Update DB asynchronously
+    user_store = UserStore()
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(user_store.update_correction_preference(user_id, preference))
+    except RuntimeError:
+        asyncio.run(user_store.update_correction_preference(user_id, preference))
+
+    return f"Correction style changed to {preference}."
+
+
 def log_learning_target(
     topic: str,
     user_mistake: str,
@@ -161,30 +264,19 @@ def log_learning_target(
     if not callback_context:
         return "Error: runtime context missing."
         
-    c = callback_context.state
-    
-    # Initialize list if missing
-    if "learning_targets" not in c:
-        c["learning_targets"] = []
+    user_id = callback_context.state.get("user:telegram_id", "")
+    if not user_id:
+        return "Error: No user ID in state."
         
-    target = {
-        "topic": topic,
-        "user_mistake": user_mistake,
-        "correct_form": correct_form
-    }
+    user_store = UserStore()
     
-    # Append the new target
-    targets = c.get("learning_targets", [])
-    if isinstance(targets, list):
-        # Prevent duplicates
-        if target not in targets:
-            targets.append(target)
-            c["learning_targets"] = targets
-            return f"Successfully logged learning target for '{topic}'."
-        else:
-            return "Target already logged."
-    
-    return "Failed to log target due to state type error."
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(user_store.log_learning_target(user_id, topic, user_mistake, correct_form))
+    except RuntimeError:
+        asyncio.run(user_store.log_learning_target(user_id, topic, user_mistake, correct_form))
+
+    return f"Successfully logged learning target for '{topic}'."
 
 # ---------------------------------------------------------------------------
 # State Initialization Callback
@@ -197,7 +289,9 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
     template exist, preventing KeyError crashes on the first turn.
     """
     defaults = {
-        "english_level": "assessing",
+        "user:english_level": "assessing",
+        "user:correction_preference": "recast_only",
+        "user:english_goal": "",
         "phone_number": "unknown",
         "user_name": "unknown",
         "user_age": 0,
@@ -207,12 +301,28 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         "onboarding_complete": "false",
         "call_count": 0,
         "is_returning_user": "false",
-        "learning_targets": []
+        "learning_targets": [],
+        "recent_memories": "No memories yet — this might be a new friend.",
+        "due_learning_targets": "No targets due for review."
     }
 
     for key, value in defaults.items():
         if key not in callback_context.state:
             callback_context.state[key] = value
+
+    user_id = callback_context.state.get("user:telegram_id", "")
+    if user_id:
+        user_store = UserStore()
+
+        # Top 3 relevant memories
+        memories = await user_store.get_relevant_memories(user_id, limit=3)
+        if memories:
+            callback_context.state["recent_memories"] = str(memories)
+
+        # Top 2 due SRS targets
+        targets = await user_store.get_due_learning_targets(user_id, limit=2)
+        if targets:
+            callback_context.state["due_learning_targets"] = str(targets)
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +333,10 @@ SKILLS_DIR = pathlib.Path(__file__).parent / "skills"
 my_skills = skill_toolset.SkillToolset(
     skills=[
         load_skill_from_dir(SKILLS_DIR / "onboarding-skill"),
-        load_skill_from_dir(SKILLS_DIR / "mission-skill"),
-        load_skill_from_dir(SKILLS_DIR / "debrief-and-recast-skill"),
-        load_skill_from_dir(SKILLS_DIR / "scaffold-language-skill"),
+        load_skill_from_dir(SKILLS_DIR / "dynamic-memory-skill"),
+        load_skill_from_dir(SKILLS_DIR / "catch-up-skill"),
+        load_skill_from_dir(SKILLS_DIR / "adaptive-conversation-skill"),
+        load_skill_from_dir(SKILLS_DIR / "grammar-correction-skill"),
     ]
 )
 
@@ -252,7 +363,15 @@ root_agent = Agent(
         "practice spoken English through fun conversations, personalized "
         "missions, and gentle recasting of mistakes."
     ),
-    tools=[google_search, update_user_profile, log_learning_target, my_skills],
+    tools=[
+        google_search,
+        update_user_profile,
+        log_learning_target,
+        extract_and_save_memory,
+        update_learning_progress,
+        change_correction_style,
+        my_skills
+    ],
     before_agent_callback=initialize_tutor_state,
 )
 
