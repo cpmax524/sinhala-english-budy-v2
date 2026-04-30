@@ -1,0 +1,66 @@
+# Implement 5-Phase Interactive Learning Strategy
+
+This plan updates the TalkMate agent to use a newly designed 5-phase interactive learning strategy focused on task-based missions, natural error correction, and structured onboarding. It also resolves bugs related to call counting and implements a post-call summary.
+
+## User Review Required
+> [!IMPORTANT]
+> The post-call Telegram message template uses a default structure designed to be helpful (Mission context, Grammar notes, and General Feedback). Please review the `Post-Call Summary Template` section below and let me know if you would like me to add or modify any fields!
+
+## Proposed Changes
+
+---
+
+### Core Prompt & Agent Configuration
+
+#### [MODIFY] [prompts.py](file:///d:/PROJECTS/ANTIGRAVITY/english-telegram/sinhala-english-tutor/app/prompts.py)
+Redesign the system instruction prompt to explicitly define the five new phases:
+1. **Phase 1 (Onboarding):** Gather `user_name`, `user_age`, `user_gender`, `user_role`, and `user_interests` naturally before updating the profile. Once completed, immediately pivot to a 1-minute assessment test and set english level.
+2. **Phase 2 (Missions):** On subsequent calls, use the user's role and interests to initiate a personalized scenario-based mission (e.g., negotiating with a shopkeeper, explaining a movie plot).
+3. **Phase 3 (Recast & Debrief):** Do not interrupt the user when correcting. Instead, naturally "recast" their broken sentence in the response. Reserve the last 90 seconds (the "Debrief") out-of-character to explain grammar. Intercept early hang-ups with a quick recap.
+4. **Phase 4 (Spaced Repetition):** At the start of new calls, check past mistakes (learning targets) and quiz the user on them briefly before starting the day's mission.
+5. **Phase 5 (Dynamic Scaffolding):** Adapt Sinhala usage tightly: Beginner (Sinhala rules + English repeat), Intermediate (English 100%, fallback on panic), Advanced (No Sinhala).
+
+#### [MODIFY] [agent.py](file:///d:/PROJECTS/ANTIGRAVITY/english-telegram/sinhala-english-tutor/app/agent.py)
+* Add a `learning_targets` list to the initialization callback `initialize_tutor_state`.
+* Define a new ADK tool `log_learning_target(topic, user_mistake, correct_form)` for the agent to save specific grammar points during the Debrief.
+* Update `update_user_profile` to ensure `onboarding_complete` becomes "true" ONLY if `name, age, gender, role (if age > 16), interests` are all fully populated.
+* Add `log_learning_target` to `root_agent` tools.
+
+---
+
+### Session Management & Call Handling
+
+#### [MODIFY] [session_manager.py](file:///d:/PROJECTS/ANTIGRAVITY/english-telegram/sinhala-english-tutor/core/session_manager.py)
+* **Fix `call_count` Logic**: Add an `increment_call: bool = False` argument to `get_or_create_session()`. The `call_count` bug occurs because sessions live in memory, so `is_new_session` is `False` incorrectly between subsequent calls.
+* Add support for storing and loading `learning_targets` (list of strings or dicts) into the `UserStore` profile dict to ensure mistakes traverse sessions safely.
+
+#### [MODIFY] [call_handler.py](file:///d:/PROJECTS/ANTIGRAVITY/english-telegram/sinhala-english-tutor/bridge/call_handler.py)
+* Pass `increment_call=True` when intercepting an incoming native call to properly count all physical calls.
+* **Post-Call Summary**: Hook into `stream_end_handler()` to extract information from the session (e.g., the latest `learning_targets` or simply general progress notes via a generative API call, or extracting from state).
+  * **Proposed Template:**
+    ```text
+    🎓 TalkMate Session Summary
+    Hello {name}, great job today!
+    
+    🎯 Today's Mission & Focus:
+    (dynamically extracted or static message)
+
+    💡 Learning Targets (Things to practice):
+    - Example: Instead of "I buyed", say "I bought".
+    
+    Keep up the great work! To continue learning, give me a call anytime!
+    ```
+
+## Open Questions
+
+1. **Post-Call Summaries:** Standard Telegram bot summaries can be static (reading variables from state) or they can be generated dynamically using a quick background call to the LLM when the phone call drops. Generating dynamically gives a better summary of *that specific call*, but takes an extra second. Which approach do you prefer: static reading of saved mistakes, or generating a fresh custom summary using the latest conversation history?
+2. **Handling Early Hangup:** The instructions tell the agent to do a recap when the user "tries to hang up before the end". Do users typically indicate "I have to leave" verbally, or simply cut the phone call abruptly? (If they cut abruptly, the agent cannot verbally recap, but the Telegram text summary will still catch them).
+
+## Verification Plan
+### Automated Tests
+* N/A
+### Manual Verification
+* Start the bot, initiate a call as a new user. Verify the agent refuses to mark onboarding complete until all 5 attributes are submitted.
+* Verify the agent triggers an assessment test right after onboarding completes.
+* Hang up and call again -> Verify the agent sets a Mission and `call_count` changes to 2.
+* Make a grammar mistake -> Verify the agent logs it. End call -> Verify Telegram message summary arrives with the mistake displayed.
