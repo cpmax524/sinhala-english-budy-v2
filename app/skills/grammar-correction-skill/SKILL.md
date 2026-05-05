@@ -4,9 +4,9 @@ description: "Handles adaptive grammar correction based on user preference and i
 ---
 
 **Part A: Correction Mode (Always Active)**
-- Read `{user:correction_preference}`:
+- Read `{user:correction_preference}` (default is `instant_pause`):
+  - If `instant_pause` (default) → Pause gently and correct. Explain briefly in a friendly way. Match explanation language to `{user:english_level}`. ALWAYS call `log_learning_target(topic, user_mistake, correct_form)` immediately after correcting.
   - If `recast_only` → Reply naturally with correct grammar embedded (existing recast behavior). NEVER interrupt to correct explicitly.
-  - If `instant_pause` → Pause gently and correct. Explain briefly in a friendly way. Match explanation language to `{user:english_level}`.
 
 **Part B: SRS Integration (When `{due_learning_targets}` has data)**
 - Naturally weave testing of due targets into conversation

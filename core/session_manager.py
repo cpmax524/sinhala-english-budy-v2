@@ -9,9 +9,9 @@ across multiple phone calls.
 import logging
 
 from google.adk.runners import Runner
-from google.adk.sessions import Session, DatabaseSessionService
+from google.adk.sessions import DatabaseSessionService, Session
 
-from core.database import engine
+from core.database import DATABASE_URL
 from core.user_store import UserStore
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class SessionManager:
     def __init__(self, app_name: str = "app") -> None:
         self.app_name = app_name
         # Use ADK's built-in service pointing to our same SQLite Engine
-        self.session_service = DatabaseSessionService(engine=engine)
+        self.session_service = DatabaseSessionService(db_url=DATABASE_URL)
         self.user_store = UserStore()
         self._runner: Runner | None = None
 
@@ -65,7 +65,6 @@ class SessionManager:
             session_id=session_id,
         )
 
-        is_new_session = False
         if session is None:
             # Create new session for first-time caller (at least in this process run)
             session = await self.session_service.create_session(
@@ -73,11 +72,13 @@ class SessionManager:
                 user_id=user_id,
                 session_id=session_id,
             )
-            is_new_session = True
 
         # Load profile from user_store to sync with ADK state
         profile = await self.user_store.load_profile(user_id)
-        
+
+        # Clear session mistakes for the new call
+        session.state["current_session_mistakes"] = []
+
         # Prefix core persistent properties with user: for clarity and persistence across sessions
         if profile:
             # User profile exists, inject into state
@@ -90,15 +91,15 @@ class SessionManager:
             session.state["onboarding_complete"] = profile.get("onboarding_complete", "false")
 
             session.state["user:english_level"] = profile.get("english_level", session.state.get("user:english_level", "assessing"))
-            session.state["user:correction_preference"] = profile.get("correction_preference", session.state.get("user:correction_preference", "recast_only"))
+            session.state["user:correction_preference"] = profile.get("correction_preference", session.state.get("user:correction_preference", "instant_pause"))
             session.state["user:english_goal"] = profile.get("english_goal", session.state.get("user:english_goal", ""))
-            
+
             # Increment call count only when explicitly requested
             call_count = profile.get("call_count", 0)
             if increment_call:
                 call_count += 1
             session.state["call_count"] = call_count
-            session.state["is_returning_user"] = "true"
+            session.state["is_returning_user"] = "true" if session.state["onboarding_complete"] == "true" else "false"
         else:
             # Completely new user
             session.state["user:telegram_id"] = user_id
@@ -110,7 +111,7 @@ class SessionManager:
             session.state["onboarding_complete"] = "false"
 
             session.state["user:english_level"] = "assessing"
-            session.state["user:correction_preference"] = "recast_only"
+            session.state["user:correction_preference"] = "instant_pause"
             session.state["user:english_goal"] = ""
 
             session.state["call_count"] = 1 if increment_call else 0
@@ -152,7 +153,7 @@ class SessionManager:
 
         # Load existing profile to merge and update
         profile = await self.user_store.load_profile(user_id) or {}
-        
+
         # Copy current session state into profile
         profile["user_name"] = session.state.get("user_name", profile.get("user_name"))
         profile["user_age"] = session.state.get("user_age", profile.get("user_age"))
@@ -162,7 +163,7 @@ class SessionManager:
         profile["onboarding_complete"] = str(session.state.get("onboarding_complete", profile.get("onboarding_complete"))).lower()
 
         profile["english_level"] = session.state.get("user:english_level", profile.get("english_level", "assessing"))
-        profile["correction_preference"] = session.state.get("user:correction_preference", profile.get("correction_preference", "recast_only"))
+        profile["correction_preference"] = session.state.get("user:correction_preference", profile.get("correction_preference", "instant_pause"))
         profile["english_goal"] = session.state.get("user:english_goal", profile.get("english_goal", ""))
 
         profile["phone_number"] = session.state.get("phone_number", profile.get("phone_number"))

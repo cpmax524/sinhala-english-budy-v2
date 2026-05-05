@@ -5,9 +5,9 @@ Audio bridging logic linking Telegram and Gemini Live API.
 import asyncio
 import logging
 
-from google.adk.agents.run_config import RunConfig, StreamingMode
-from google.adk.agents import LiveRequestQueue
 from google.adk import Runner
+from google.adk.agents import LiveRequestQueue
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.genai import types
 
 from core.config import AppConfig
@@ -22,7 +22,7 @@ async def bridge_audio_to_gemini(
     session_id: str,
     record_port: int,
     play_port: int,
-    ready_event: asyncio.Event = None,
+    ready_event: asyncio.Event | None = None,
 ) -> None:
     """
     The core bidirectional bridge between Telegram's audio stream and Gemini via TCP sockets.
@@ -40,8 +40,8 @@ async def bridge_audio_to_gemini(
     logger.info("Using runner app_name=%s", runner.app_name)
 
     queue = LiveRequestQueue()
-    
-    # Configure the Gemini Live voice. 
+
+    # Configure the Gemini Live voice.
     # Female voices: "Aoede", "Kore", "Leda"
     run_config = RunConfig(
         streaming_mode=StreamingMode.BIDI,
@@ -58,7 +58,7 @@ async def bridge_audio_to_gemini(
             )
         )
     )
-    
+
     client_connected = asyncio.Event()
     writer_ref = []
 
@@ -95,7 +95,7 @@ async def bridge_audio_to_gemini(
         try:
             while True:
                 data = await reader.read(1024)
-                if not data: 
+                if not data:
                     break
         except asyncio.CancelledError:
             pass
@@ -125,7 +125,7 @@ async def bridge_audio_to_gemini(
             # Wait for FFmpeg to connect
             await client_connected.wait()
             target_writer = writer_ref[0]
-            
+
             stream_gen = runner.run_live(
                 user_id=user_id,
                 session_id=session_id,
@@ -149,7 +149,7 @@ async def bridge_audio_to_gemini(
         except Exception as e:
             logger.error("Downstream task error: %s", e, exc_info=True)
 
-    # Run downstream loop 
+    # Run downstream loop
     downstream = asyncio.create_task(downstream_task())
 
     try:

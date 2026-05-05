@@ -5,10 +5,16 @@ Persistent storage for user profiles using SQLite and SQLAlchemy.
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from core.database import AsyncSessionLocal, LearningTarget, User, UserMemory, CorrectionPreference
+from core.database import (
+    AsyncSessionLocal,
+    CorrectionPreference,
+    LearningTarget,
+    User,
+    UserMemory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +64,7 @@ class UserStore:
             user.english_level = profile_data.get("english_level", user.english_level)
             user.call_count = int(profile_data.get("call_count", user.call_count))
             user.last_seen = datetime.utcnow()
-            
+
             user.correction_preference = profile_data.get("correction_preference", user.correction_preference)
             user.english_goal = profile_data.get("english_goal", user.english_goal)
 

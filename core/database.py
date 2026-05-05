@@ -3,11 +3,17 @@ Database models and connection setup for the application.
 """
 
 import enum
-import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, select, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -106,7 +112,7 @@ class LearningTarget(Base):
     topic: Mapped[str] = mapped_column(String, default="")
     user_mistake: Mapped[str] = mapped_column(Text, default="")
     correct_form: Mapped[str] = mapped_column(Text, default="")
-    
+
     mastery_level: Mapped[int] = mapped_column(Integer, default=0)
     times_tested: Mapped[int] = mapped_column(Integer, default=0)
     last_tested_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

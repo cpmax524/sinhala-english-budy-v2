@@ -4,20 +4,20 @@ Call handler for intercepting Telegram 1-on-1 voice calls.
 
 import logging
 
-from pyrogram import Client
-from pytgcalls import PyTgCalls, filters as call_filters
-from pytgcalls.types import ChatUpdate, CallConfig
-from pytgcalls.types.raw.stream import Stream
-from pytgcalls.types.raw.audio_stream import AudioStream
-from pytgcalls.types.raw.audio_parameters import AudioParameters
 from ntgcalls import MediaSource
+from pyrogram import Client
+from pytgcalls import PyTgCalls
+from pytgcalls import filters as call_filters
 from pytgcalls.list_to_cmd import list_to_cmd
+from pytgcalls.types import CallConfig, ChatUpdate
+from pytgcalls.types.raw.audio_parameters import AudioParameters
+from pytgcalls.types.raw.audio_stream import AudioStream
+from pytgcalls.types.raw.stream import Stream
 
 from bridge.audio_bridge import bridge_audio_to_gemini
 from core.config import AppConfig
 from core.session_manager import SessionManager
 
-        
 logger = logging.getLogger(__name__)
 
 def register_call_handlers(
@@ -34,7 +34,7 @@ def register_call_handlers(
     async def handle_native_incoming_call(client: PyTgCalls, update: ChatUpdate):
         """Intercepts and physically answers native 1-on-1 ringing phone calls."""
         chat_id = update.chat_id
-        
+
         # Try to resolve user info for logging and session state
         try:
             user = await app.get_users(chat_id)
@@ -61,13 +61,13 @@ def register_call_handlers(
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.bind(('127.0.0.1', 0))
                     return s.getsockname()[1]
-                    
+
             record_port = get_free_port()
             play_port = get_free_port()
 
             # 3. Create the OUTGOING (play) stream
             play_cmd = [
-                'ffmpeg', '-loglevel', 'warning', 
+                'ffmpeg', '-loglevel', 'warning',
                 '-f', 's16le', '-ar', '16000', '-ac', '1', '-i', f'tcp://127.0.0.1:{play_port}',
                 '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
             ]
@@ -81,7 +81,7 @@ def register_call_handlers(
 
             # 4. Create the INCOMING (record) stream
             record_cmd = [
-                'ffmpeg', '-y', '-report', '-loglevel', 'info', 
+                'ffmpeg', '-y', '-report', '-loglevel', 'info',
                 '-f', 's16le', '-ar', '48000', '-ac', '2', '-i', 'pipe:0',
                 '-f', 's16le', '-ar', '16000', '-ac', '1', f'tcp://127.0.0.1:{record_port}'
             ]
@@ -92,12 +92,12 @@ def register_call_handlers(
                     parameters=AudioParameters(48000, 2),
                 )
             )
-            
+
             # 5. Start audio bridging over the TCP sockets first
             import asyncio
             ready_event = asyncio.Event()
-            
-            asyncio.create_task(
+
+            asyncio.create_task(  # noqa: RUF006
                 bridge_audio_to_gemini(
                     runner=session_manager.runner,
                     config=config,
@@ -115,7 +115,7 @@ def register_call_handlers(
             # 6. Answer the native call using CallConfig inside PyTgCalls
             logger.info("✅ Accepting call via PyTgCalls Play...")
             await call_py.play(chat_id, play_stream, config=CallConfig())
-            
+
             logger.info("✅ Intercepting incoming caller via PyTgCalls Record...")
             await call_py.record(chat_id, record_stream)
 
@@ -126,7 +126,7 @@ def register_call_handlers(
     async def stream_end_handler(client: PyTgCalls, update: ChatUpdate):
         """Handles call hang-ups to gracefully close the loop and save state."""
         logger.info("📞 Call ended or discarded for chat: %s", update.chat_id)
-        
+
         # Save session state
         try:
             await session_manager.save_session_state(telegram_user_id=update.chat_id)
@@ -136,20 +136,21 @@ def register_call_handlers(
         # Generate and send dynamic post-call summary using LLM
         try:
             import os
+
             from google import genai
-            
+
             session = await session_manager.get_or_create_session(telegram_user_id=update.chat_id)
             user_name = session.state.get("user_name", "User")
-            learning_targets = session.state.get("learning_targets", [])
+            current_session_mistakes = session.state.get("current_session_mistakes", [])
             english_level = session.state.get("english_level", "assessing")
             user_interests = session.state.get("user_interests", "")
             onboarding_complete = session.state.get("onboarding_complete", "false")
             call_count = session.state.get("call_count", 0)
-            
+
             # --- SHORT-CIRCUIT: If no meaningful data, send a brief honest message ---
-            has_targets = bool(learning_targets)
+            has_targets = bool(current_session_mistakes)
             has_name = user_name not in ("User", "unknown", "")
-            
+
             if not has_targets and onboarding_complete == "false":
                 # No data at all — very short/silent call. Send a brief, honest fallback.
                 if has_name:
@@ -167,11 +168,11 @@ def register_call_handlers(
                 await app.send_message(update.chat_id, fallback_msg)
                 logger.info("✅ Sent fallback post-call message to %s (no data)", update.chat_id)
                 return
-            
+
             # --- BUILD DATA-GROUNDED SUMMARY ---
             if has_targets:
                 formatted_targets = ""
-                for i, t in enumerate(learning_targets[-3:], 1):
+                for i, t in enumerate(current_session_mistakes[-5:], 1):
                     if isinstance(t, dict):
                         formatted_targets += (
                             f"Mistake #{i}:\n"
@@ -182,8 +183,8 @@ def register_call_handlers(
                     else:
                         formatted_targets += f"- {t}\n"
             else:
-                formatted_targets = "No specific grammar mistakes were logged this time."
-            
+                formatted_targets = "No specific grammar mistakes were logged this time. Your English sounded perfect today!"
+
             # Build level-aware language instruction for the summary
             if english_level == "beginner":
                 language_instruction = (
@@ -201,7 +202,7 @@ def register_call_handlers(
                     "Write the summary almost entirely in English. "
                     "Use Sinhala only for cultural flair or a warm closing."
                 )
-            
+
             prompt = f"""You are TalkMate — a warm, enthusiastic Sri Lankan friend who just finished a phone call with {user_name}.
 
 Write a Telegram summary message (100-150 words) that feels like a friend texting after hanging out.
@@ -242,10 +243,10 @@ Learning Targets:
 """
             api_key = os.environ.get("GEMINI_API_KEY")
             is_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "FALSE").strip().upper() == "TRUE"
-            
+
             # Using vertex AI suitable model
             model_name = 'gemini-2.5-flash'
-            
+
             gemini_client = None
             if is_vertex:
                 # **CRITICAL FIX**: Vertex AI uses Application Default Credentials.
@@ -256,20 +257,20 @@ Learning Targets:
             elif api_key:
                 # Standard Gemini API setup
                 gemini_client = genai.Client(api_key=api_key)
-                
+
             if gemini_client:
                 response = gemini_client.models.generate_content(
                     model=model_name,
                     contents=prompt,
                 )
                 summary_text = response.text
-                
+
                 # Send message specifically to the relevant user
                 await app.send_message(update.chat_id, summary_text)
                 logger.info("✅ Sent dynamic post-call summary to %s", update.chat_id)
             else:
                 logger.warning("No Vertex/Gemini API config found. Skipping dynamic summary.")
-                
+
         except Exception as e:
             logger.error("Failed to generate/send post-call summary: %s", e)
 

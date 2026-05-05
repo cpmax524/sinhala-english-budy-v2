@@ -268,6 +268,15 @@ def log_learning_target(
     if not user_id:
         return "Error: No user ID in state."
         
+    if "current_session_mistakes" not in callback_context.state:
+        callback_context.state["current_session_mistakes"] = []
+        
+    callback_context.state["current_session_mistakes"].append({
+        "topic": topic,
+        "user_mistake": user_mistake,
+        "correct_form": correct_form
+    })
+        
     user_store = UserStore()
     
     try:
@@ -290,7 +299,7 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
     """
     defaults = {
         "user:english_level": "assessing",
-        "user:correction_preference": "recast_only",
+        "user:correction_preference": "instant_pause",
         "user:english_goal": "",
         "phone_number": "unknown",
         "user_name": "unknown",
@@ -303,7 +312,8 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         "is_returning_user": "false",
         "learning_targets": [],
         "recent_memories": "No memories yet — this might be a new friend.",
-        "due_learning_targets": "No targets due for review."
+        "due_learning_targets": "No targets due for review.",
+        "current_session_mistakes": []
     }
 
     for key, value in defaults.items():
