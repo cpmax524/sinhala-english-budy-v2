@@ -1,6 +1,6 @@
 ---
 name: grammar-correction-skill
-description: "Handles adaptive grammar correction based on user preference and integrates SRS review of past mistakes."
+description: "DOCUMENT/MANUAL: Contains rules and instructions for adaptive grammar correction. Use the load_skill tool to read this document. Do NOT attempt to call this as a function."
 ---
 
 **Part A: Correction Mode (Always Active)**

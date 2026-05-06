@@ -149,7 +149,7 @@ async def initialize_tutor_state(ctx: CallbackContext) -> None:
 
 **Critical State Keys:**
 - `user:english_level` — "assessing" | "beginner" | "intermediate" | "professional"
-- `user:correction_preference` — "instant_pause" | "recast_only"
+- `user:correction_preference` — "instant_pause" 
 - `current_session_mistakes` — Array of dicts tracking mistakes in the current call for the post-call summary.
 - `recent_memories` — Injected relevance-weighted episodic memories.
 - `due_learning_targets` — Injected due SRS targets.

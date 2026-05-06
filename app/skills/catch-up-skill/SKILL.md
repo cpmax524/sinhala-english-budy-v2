@@ -1,6 +1,6 @@
 ---
 name: catch-up-skill
-description: "Engages returning users organically using episodic memories instead of forced lessons or quizzes."
+description: "DOCUMENT/MANUAL: Contains instructions for engaging returning users using episodic memories. Use the load_skill tool to read this document. Do NOT attempt to call this as a function."
 ---
 
 - Triggered for returning users (`{is_returning_user}` == `"true"`)

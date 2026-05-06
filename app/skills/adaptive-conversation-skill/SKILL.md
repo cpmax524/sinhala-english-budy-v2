@@ -1,6 +1,6 @@
 ---
 name: adaptive-conversation-skill
-description: "Generates dynamic conversation topics based on user interests, memories, and natural flow — not rigid missions."
+description: "DOCUMENT/MANUAL: Contains instructions for generating dynamic conversation topics based on user interests. Use the load_skill tool to read this document. Do NOT attempt to call this as a function."
 ---
 
 - Generate topics from `{user_interests}` and `{recent_memories}`

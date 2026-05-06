@@ -1,6 +1,6 @@
 ---
 name: dynamic-memory-skill
-description: "Passively monitors conversation for personal details and saves them as long-term episodic memories."
+description: "DOCUMENT/MANUAL: Contains instructions for monitoring conversations for personal details. Use the load_skill tool to read this document. Do NOT attempt to call this as a function."
 ---
 
 - Monitor the conversation stream for personal details, preferences, life events

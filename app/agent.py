@@ -61,7 +61,7 @@ LIVE_MODEL = (
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
-def update_user_profile(
+async def update_user_profile(
     name: str = "unknown",
     age: int = 0,
     gender: str = "unknown",
@@ -100,13 +100,14 @@ def update_user_profile(
         "talkmate", "sinhala", "english", "sri lankan",
     }
 
-    if name and name.lower().strip() not in SUSPICIOUS_NAMES:
-        # Reject names that are too long (likely fabricated sentences)
-        if len(name.strip()) > 40:
-            return "Error: Name seems too long. Ask the user for their actual name."
-        c["user_name"] = name.strip()
-    elif name and name.lower().strip() in SUSPICIOUS_NAMES:
-        return f"Error: '{name}' is not a real name. Do NOT guess. Ask the user: 'What's your name?'"
+    if name and name != "unknown":
+        if name.lower().strip() not in SUSPICIOUS_NAMES:
+            # Reject names that are too long (likely fabricated sentences)
+            if len(name.strip()) > 40:
+                return "Error: Name seems too long. Ask the user for their actual name."
+            c["user_name"] = name.strip()
+        else:
+            return f"Error: '{name}' is not a real name. Do NOT guess. Ask the user: 'What's your name?'"
 
     if age and age > 0:
         # Reject impossible ages
@@ -114,7 +115,7 @@ def update_user_profile(
             return f"Error: Age {age} seems wrong. Ask the user their actual age."
         c["user_age"] = age
 
-    if gender and gender.lower().strip() not in ("unknown", ""):
+    if gender and gender != "unknown":
         if gender.lower().strip() in ("male", "female", "other"):
             c["user_gender"] = gender.lower().strip()
         else:
@@ -139,12 +140,31 @@ def update_user_profile(
         # role is optional if age <= 16
         if c.get("user_age", 0) <= 16 or c.get("user_role", ""):
             c["onboarding_complete"] = "true"
-            return "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
+            msg = "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
+        else:
+            msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
+    else:
+        msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
 
-    return "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
+    # --- Persist to Database ---
+    user_id = c.get("user:telegram_id", "")
+    if user_id:
+        user_store = UserStore()
+        # Create a dict of the fields we track for saving
+        profile_data = {
+            "user_name": c.get("user_name", "unknown"),
+            "user_age": c.get("user_age", 0),
+            "user_gender": c.get("user_gender", "unknown"),
+            "user_role": c.get("user_role", ""),
+            "user_interests": c.get("user_interests", ""),
+            "onboarding_complete": c.get("onboarding_complete", "false"),
+        }
+        await user_store.save_profile(user_id, profile_data)
+
+    return msg
 
 
-def extract_and_save_memory(
+async def extract_and_save_memory(
     fact: str,
     category: str,
     callback_context: CallbackContext = None,
@@ -169,20 +189,12 @@ def extract_and_save_memory(
         return "Error: Invalid fact length."
 
     user_store = UserStore()
-
-    # We must run the async DB save without blocking the tool execution unnecessarily
-    # (Since this is a synchronous tool function wrapping an async db call)
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(user_store.save_memory(user_id, fact, category))
-    except RuntimeError:
-        # Fallback if no running loop
-        asyncio.run(user_store.save_memory(user_id, fact, category))
+    await user_store.save_memory(user_id, fact, category)
 
     return "Memory successfully saved."
 
 
-def update_learning_progress(
+async def update_learning_progress(
     target_id: int,
     success: bool,
     callback_context: CallbackContext = None,
@@ -199,17 +211,12 @@ def update_learning_progress(
         return "Error: runtime context missing."
 
     user_store = UserStore()
-
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(user_store.update_learning_progress(target_id, success))
-    except RuntimeError:
-        asyncio.run(user_store.update_learning_progress(target_id, success))
+    await user_store.update_learning_progress(target_id, success)
 
     return "Learning progress updated."
 
 
-def change_correction_style(
+async def change_correction_style(
     preference: str,
     callback_context: CallbackContext = None,
 ) -> str:
@@ -236,16 +243,12 @@ def change_correction_style(
 
     # Update DB asynchronously
     user_store = UserStore()
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(user_store.update_correction_preference(user_id, preference))
-    except RuntimeError:
-        asyncio.run(user_store.update_correction_preference(user_id, preference))
+    await user_store.update_correction_preference(user_id, preference)
 
     return f"Correction style changed to {preference}."
 
 
-def log_learning_target(
+async def log_learning_target(
     topic: str,
     user_mistake: str,
     correct_form: str,
@@ -278,14 +281,11 @@ def log_learning_target(
     })
         
     user_store = UserStore()
-    
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(user_store.log_learning_target(user_id, topic, user_mistake, correct_form))
-    except RuntimeError:
-        asyncio.run(user_store.log_learning_target(user_id, topic, user_mistake, correct_form))
+    await user_store.log_learning_target(user_id, topic, user_mistake, correct_form)
 
     return f"Successfully logged learning target for '{topic}'."
+
+
 
 # ---------------------------------------------------------------------------
 # State Initialization Callback
