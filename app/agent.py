@@ -139,9 +139,37 @@ def update_user_profile(
         # role is optional if age <= 16
         if c.get("user_age", 0) <= 16 or c.get("user_role", ""):
             c["onboarding_complete"] = "true"
-            return "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
+            msg = "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
+        else:
+            msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
+    else:
+        msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
 
-    return "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
+    # --- Persist to Database ---
+    user_id = c.get("user:telegram_id", "")
+    if user_id:
+        user_store = UserStore()
+        # Create a dict of the fields we track for saving
+        profile_data = {
+            "user_name": c.get("user_name", "unknown"),
+            "user_age": c.get("user_age", 0),
+            "user_gender": c.get("user_gender", "unknown"),
+            "user_role": c.get("user_role", ""),
+            "user_interests": c.get("user_interests", ""),
+            "onboarding_complete": c.get("onboarding_complete", "false"),
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(user_store.save_profile(user_id, profile_data))
+            # Store a strong reference to prevent garbage collection
+            if not hasattr(update_user_profile, "background_tasks"):
+                update_user_profile.background_tasks = set()
+            update_user_profile.background_tasks.add(task)
+            task.add_done_callback(update_user_profile.background_tasks.discard)
+        except RuntimeError:
+            asyncio.run(user_store.save_profile(user_id, profile_data))
+
+    return msg
 
 
 def extract_and_save_memory(
