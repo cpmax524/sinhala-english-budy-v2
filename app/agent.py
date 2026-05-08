@@ -26,17 +26,59 @@ import os
 from google.genai import types
 from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.apps import App
 from google.adk.models.google_llm import Gemini
 from google.adk.tools import google_search
 
 import pathlib
 import asyncio
+from jinja2 import Template
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools import skill_toolset
 
 from app.prompts import SYSTEM_INSTRUCTION
 from core.user_store import UserStore
+
+# ---------------------------------------------------------------------------
+# Jinja2 Instruction Provider
+# ---------------------------------------------------------------------------
+# Pre-compile the Jinja2 template once at import time for performance.
+_instruction_template = Template(SYSTEM_INSTRUCTION)
+
+
+def render_instruction(context: ReadonlyContext) -> str:
+    """
+    ADK InstructionProvider callable.
+
+    Renders the SYSTEM_INSTRUCTION Jinja2 template using current session
+    state variables. Called by ADK at the start of each agent invocation.
+    """
+    state = context.state
+    template_vars = {
+        "user_name": state.get("user_name", "unknown"),
+        "user_age": state.get("user_age", 0),
+        "user_gender": state.get("user_gender", "unknown"),
+        "user_role": state.get("user_role", ""),
+        "user_interests": state.get("user_interests", ""),
+        "english_level": state.get("user:english_level", "assessing"),
+        "correction_preference": state.get("user:correction_preference", "instant_pause"),
+        "onboarding_complete": state.get("onboarding_complete", "false"),
+        "is_returning_user": state.get("is_returning_user", "false"),
+        "call_count": state.get("call_count", 0),
+        "recent_memories": state.get("recent_memories", "No memories yet — this might be a new friend."),
+        "due_learning_targets": state.get("due_learning_targets", "No targets due for review."),
+    }
+    return _instruction_template.render(**template_vars)
+
+# ---------------------------------------------------------------------------
+# In-Memory Mistake Tracker (Bug #2 workaround)
+# ---------------------------------------------------------------------------
+# The Live API's bidi streaming session may not flush ADK state back to the
+# DatabaseSessionService before the call-end handler fires. This dict keeps
+# a process-level copy keyed by user_id so the post-call summary can always
+# read the mistakes reliably.
+_session_mistakes: dict[str, list[dict]] = {}
 
 # ---------------------------------------------------------------------------
 # Environment setup for Google AI Studio (API Key mode)
@@ -137,12 +179,8 @@ async def update_user_profile(
     has_interests = bool(c.get("user_interests", "").strip())
 
     if has_name and has_age and has_gender and has_interests:
-        # role is optional if age <= 16
-        if c.get("user_age", 0) <= 16 or c.get("user_role", ""):
-            c["onboarding_complete"] = "true"
-            msg = "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
-        else:
-            msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
+        c["onboarding_complete"] = "true"
+        msg = "Profile successfully updated and ONBOARDING COMPLETED! You should now acknowledge this smoothly and transition into practice."
     else:
         msg = "Profile partially updated. Continue gathering the missing information naturally. Do NOT guess — ask the user."
 
@@ -189,7 +227,10 @@ async def extract_and_save_memory(
         return "Error: Invalid fact length."
 
     user_store = UserStore()
-    await user_store.save_memory(user_id, fact, category)
+    saved = await user_store.save_memory(user_id, fact, category)
+
+    if not saved:
+        return "Error: Could not save memory — user may not exist in DB yet."
 
     return "Memory successfully saved."
 
@@ -273,15 +314,26 @@ async def log_learning_target(
         
     if "current_session_mistakes" not in callback_context.state:
         callback_context.state["current_session_mistakes"] = []
-        
-    callback_context.state["current_session_mistakes"].append({
+
+    mistake_entry = {
         "topic": topic,
         "user_mistake": user_mistake,
-        "correct_form": correct_form
-    })
-        
+        "correct_form": correct_form,
+    }
+
+    callback_context.state["current_session_mistakes"].append(mistake_entry)
+
+    # Also write to the process-level in-memory tracker so the post-call
+    # summary can read mistakes even if Live API doesn't flush ADK state.
+    if user_id not in _session_mistakes:
+        _session_mistakes[user_id] = []
+    _session_mistakes[user_id].append(mistake_entry)
+
     user_store = UserStore()
-    await user_store.log_learning_target(user_id, topic, user_mistake, correct_form)
+    saved = await user_store.log_learning_target(user_id, topic, user_mistake, correct_form)
+
+    if not saved:
+        return f"Warning: Logged '{topic}' to session state but DB save failed — user may not exist yet."
 
     return f"Successfully logged learning target for '{topic}'."
 
@@ -294,9 +346,16 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
     """
     Initialize session state variables before the agent runs.
 
-    This callback ensures all state keys referenced in the instruction
-    template exist, preventing KeyError crashes on the first turn.
+    This callback runs on EVERY agent invocation (every turn). It:
+    1. Sets safe defaults for any missing state keys.
+    2. Reloads user profile from DB as a safety net if critical keys
+       are missing (e.g., after state deserialization issues).
+    3. Fetches and formats episodic memories and SRS targets into
+       human-readable strings for the Jinja2 prompt template.
     """
+    state = callback_context.state
+
+    # --- Phase 1: Set hard defaults for all required keys ---
     defaults = {
         "user:english_level": "assessing",
         "user:correction_preference": "instant_pause",
@@ -313,26 +372,67 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         "learning_targets": [],
         "recent_memories": "No memories yet — this might be a new friend.",
         "due_learning_targets": "No targets due for review.",
-        "current_session_mistakes": []
+        "current_session_mistakes": [],
     }
 
     for key, value in defaults.items():
-        if key not in callback_context.state:
-            callback_context.state[key] = value
+        if key not in state:
+            state[key] = value
 
-    user_id = callback_context.state.get("user:telegram_id", "")
+    # --- Phase 2: Safety-net profile reload from DB ---
+    # If critical profile keys are still at their defaults, attempt to
+    # reload from the database. This catches cases where ADK state was
+    # reset or deserialization dropped keys between turns.
+    user_id = state.get("user:telegram_id", "")
     if user_id:
         user_store = UserStore()
 
-        # Top 3 relevant memories
+        needs_reload = (
+            state.get("user_name") == "unknown"
+            and state.get("onboarding_complete") == "false"
+        )
+        if needs_reload:
+            profile = await user_store.load_profile(user_id)
+            if profile:
+                state["user_name"] = profile.get("user_name", "unknown")
+                state["user_age"] = profile.get("user_age", 0)
+                state["user_gender"] = profile.get("user_gender", "unknown")
+                state["user_role"] = profile.get("user_role", "")
+                state["user_interests"] = profile.get("user_interests", "")
+                state["onboarding_complete"] = profile.get("onboarding_complete", "false")
+                state["user:english_level"] = profile.get("english_level", "assessing")
+                state["user:correction_preference"] = profile.get("correction_preference", "instant_pause")
+                state["user:english_goal"] = profile.get("english_goal", "")
+                state["call_count"] = profile.get("call_count", 0)
+                state["is_returning_user"] = (
+                    "true" if profile.get("onboarding_complete") == "true" else "false"
+                )
+
+        # --- Phase 3: Fetch and format episodic memories ---
         memories = await user_store.get_relevant_memories(user_id, limit=3)
         if memories:
-            callback_context.state["recent_memories"] = str(memories)
+            formatted_lines = []
+            for mem in memories:
+                fact = mem.get("memory_fact", "")
+                category = mem.get("category", "general")
+                formatted_lines.append(f"- [{category}] {fact}")
+            state["recent_memories"] = "\n".join(formatted_lines)
 
-        # Top 2 due SRS targets
+        # --- Phase 4: Fetch and format SRS targets ---
         targets = await user_store.get_due_learning_targets(user_id, limit=2)
         if targets:
-            callback_context.state["due_learning_targets"] = str(targets)
+            formatted_lines = []
+            for t in targets:
+                target_id = t.get("id", "?")
+                topic = t.get("topic", "unknown")
+                mistake = t.get("user_mistake", "")
+                correct = t.get("correct_form", "")
+                mastery = t.get("mastery_level", 0)
+                formatted_lines.append(
+                    f"- Target #{target_id} ({topic}, mastery {mastery}/3): "
+                    f'"{mistake}" → "{correct}"'
+                )
+            state["due_learning_targets"] = "\n".join(formatted_lines)
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +467,7 @@ custom_llm = Gemini(
 root_agent = Agent(
     name="sinhala_english_tutor",
     model=custom_llm,
-    instruction=SYSTEM_INSTRUCTION,
+    instruction=render_instruction,
     description=(
         "TalkMate — a warm, bilingual Sri Lankan friend who helps users "
         "practice spoken English through fun conversations, personalized "

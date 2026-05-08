@@ -45,7 +45,7 @@ class User(Base):
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    correction_preference: Mapped[str] = mapped_column(String, default="recast_only")
+    correction_preference: Mapped[str] = mapped_column(String, default="instant_pause")
     english_goal: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationship to learning targets

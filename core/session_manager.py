@@ -98,6 +98,9 @@ class SessionManager:
             call_count = profile.get("call_count", 0)
             if increment_call:
                 call_count += 1
+                # Persist the incremented count to DB immediately so it
+                # survives even if the ADK session state is lost later.
+                await self.user_store.save_profile(user_id, {"call_count": call_count})
             session.state["call_count"] = call_count
             session.state["is_returning_user"] = "true" if session.state["onboarding_complete"] == "true" else "false"
         else:

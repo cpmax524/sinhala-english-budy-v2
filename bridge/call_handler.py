@@ -138,11 +138,27 @@ def register_call_handlers(
             import os
 
             from google import genai
+            from app.agent import _session_mistakes
 
-            session = await session_manager.get_or_create_session(telegram_user_id=update.chat_id)
+            session = await session_manager.session_service.get_session(
+                app_name=session_manager.app_name,
+                user_id=str(update.chat_id),
+                session_id=str(update.chat_id),
+            )
+            if not session:
+                logger.warning("No session found for post-call summary for %s", update.chat_id)
+                return
+
+            user_id_str = str(update.chat_id)
             user_name = session.state.get("user_name", "User")
-            current_session_mistakes = session.state.get("current_session_mistakes", [])
-            english_level = session.state.get("english_level", "assessing")
+
+            # Read mistakes from the reliable in-memory tracker first,
+            # then fall back to ADK session state if empty.
+            current_session_mistakes = _session_mistakes.pop(user_id_str, [])
+            if not current_session_mistakes:
+                current_session_mistakes = session.state.get("current_session_mistakes", [])
+
+            english_level = session.state.get("user:english_level", "assessing")
             user_interests = session.state.get("user_interests", "")
             onboarding_complete = session.state.get("onboarding_complete", "false")
             call_count = session.state.get("call_count", 0)
