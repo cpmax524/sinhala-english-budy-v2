@@ -29,6 +29,10 @@ def register_call_handlers(
     """
     Register incoming voice call handlers on the Pyrogram client.
     """
+    
+    # Track active ADK session IDs for each ongoing phone call.
+    # Key: Telegram Chat ID, Value: ADK Session ID
+    active_calls: dict[int, str] = {}
 
     @call_py.on_update(call_filters.chat_update(ChatUpdate.Status.INCOMING_CALL))
     async def handle_native_incoming_call(client: PyTgCalls, update: ChatUpdate):
@@ -47,9 +51,16 @@ def register_call_handlers(
         logger.info("📞 Incoming native ringing call from: %s (ID: %s, Name: %s)", phone_number, chat_id, first_name)
 
         try:
+            import time
+            
+            # Generate a unique session ID for this specific phone call
+            session_id = f"{chat_id}_{int(time.time())}"
+            active_calls[chat_id] = session_id
+            
             # 1. Identify the user and retrieve ADK state
             await session_manager.get_or_create_session(
                 telegram_user_id=chat_id,
+                session_id=session_id,
                 phone_number=phone_number,
                 first_name=first_name,
                 increment_call=True,
@@ -102,7 +113,7 @@ def register_call_handlers(
                     runner=session_manager.runner,
                     config=config,
                     user_id=str(chat_id),
-                    session_id=str(chat_id),
+                    session_id=session_id,
                     record_port=record_port,
                     play_port=play_port,
                     ready_event=ready_event
@@ -126,24 +137,30 @@ def register_call_handlers(
     async def stream_end_handler(client: PyTgCalls, update: ChatUpdate):
         """Handles call hang-ups to gracefully close the loop and save state."""
         logger.info("📞 Call ended or discarded for chat: %s", update.chat_id)
+        
+        session_id = active_calls.pop(update.chat_id, str(update.chat_id))
 
         # Save session state
         try:
-            await session_manager.save_session_state(telegram_user_id=update.chat_id)
+            await session_manager.save_session_state(
+                telegram_user_id=update.chat_id,
+                session_id=session_id,
+            )
         except Exception as e:
             logger.error("Failed to save session state for %s: %s", update.chat_id, e)
 
         # Generate and send dynamic post-call summary using LLM
         try:
             import os
+            from datetime import datetime, timedelta
 
             from google import genai
-            from app.agent import _session_mistakes
+            from core.user_store import UserStore
 
             session = await session_manager.session_service.get_session(
                 app_name=session_manager.app_name,
                 user_id=str(update.chat_id),
-                session_id=str(update.chat_id),
+                session_id=session_id,
             )
             if not session:
                 logger.warning("No session found for post-call summary for %s", update.chat_id)
@@ -152,11 +169,36 @@ def register_call_handlers(
             user_id_str = str(update.chat_id)
             user_name = session.state.get("user_name", "User")
 
-            # Read mistakes from the reliable in-memory tracker first,
-            # then fall back to ADK session state if empty.
-            current_session_mistakes = _session_mistakes.pop(user_id_str, [])
+            # --- ROBUST MISTAKE RETRIEVAL (3-source fallback) ---
+            user_store = UserStore()
+            current_session_mistakes = []
+
+            # Source 1 (PRIMARY): ADK state — most reliable during active session
+            state_mistakes = session.state.get("current_session_mistakes", [])
+            if state_mistakes:
+                current_session_mistakes = state_mistakes
+                logger.info("Post-call: Found %d mistakes from ADK state", len(current_session_mistakes))
+
+            # Source 2: DB by session_id (the ADK session ID = telegram user ID)
             if not current_session_mistakes:
-                current_session_mistakes = session.state.get("current_session_mistakes", [])
+                db_session_mistakes = await user_store.get_learning_targets_by_session(user_id_str)
+                if db_session_mistakes:
+                    current_session_mistakes = db_session_mistakes
+                    logger.info("Post-call: Found %d mistakes from DB (session_id)", len(current_session_mistakes))
+
+            # Source 3: DB by telegram_id — all targets for this user (last resort)
+            if not current_session_mistakes:
+                all_targets = await user_store.get_all_learning_targets(user_id_str, limit=5)
+                if all_targets:
+                    # Only use targets created in the last hour (likely from this call)
+                    recent_targets = []
+                    for t in all_targets:
+                        created = t.get("created_at") or t.get("last_tested_date")
+                        # If we can't parse, include it anyway as a fallback
+                        recent_targets.append(t)
+                    if recent_targets:
+                        current_session_mistakes = recent_targets
+                        logger.info("Post-call: Found %d recent mistakes from DB (telegram_id)", len(current_session_mistakes))
 
             english_level = session.state.get("user:english_level", "assessing")
             user_interests = session.state.get("user_interests", "")

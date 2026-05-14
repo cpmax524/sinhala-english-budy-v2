@@ -109,6 +109,7 @@ class LearningTarget(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_id: Mapped[str] = mapped_column(String, ForeignKey("users.telegram_id"))
+    session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     topic: Mapped[str] = mapped_column(String, default="")
     user_mistake: Mapped[str] = mapped_column(Text, default="")
     correct_form: Mapped[str] = mapped_column(Text, default="")
@@ -123,6 +124,7 @@ class LearningTarget(Base):
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
+            "session_id": self.session_id,
             "topic": self.topic,
             "user_mistake": self.user_mistake,
             "correct_form": self.correct_form,

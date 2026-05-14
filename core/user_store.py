@@ -56,13 +56,22 @@ class UserStore:
 
             user.phone_number = profile_data.get("phone_number", user.phone_number)
             user.user_name = profile_data.get("user_name", user.user_name)
-            user.user_age = int(profile_data.get("user_age", user.user_age))
+            
+            age_val = profile_data.get("user_age", user.user_age)
+            user.user_age = int(age_val) if age_val is not None else None
+            
             user.user_gender = profile_data.get("user_gender", user.user_gender)
             user.user_role = profile_data.get("user_role", user.user_role)
             user.user_interests = profile_data.get("user_interests", user.user_interests)
-            user.onboarding_complete = str(profile_data.get("onboarding_complete", user.onboarding_complete)).lower()
+            
+            onboard_val = profile_data.get("onboarding_complete", user.onboarding_complete)
+            user.onboarding_complete = str(onboard_val).lower() if onboard_val is not None else "false"
+            
             user.english_level = profile_data.get("english_level", user.english_level)
-            user.call_count = int(profile_data.get("call_count", user.call_count))
+            
+            call_count_val = profile_data.get("call_count", user.call_count)
+            user.call_count = int(call_count_val) if call_count_val is not None else 0
+            
             user.last_seen = datetime.utcnow()
 
             user.correction_preference = profile_data.get("correction_preference", user.correction_preference)
@@ -167,7 +176,7 @@ class UserStore:
             if success:
                 new_level = min(current_level + 1, 3)
             else:
-                new_level = max(current_level - 1, 0)
+                new_level = 0 # Reset to 0 as requested
 
             target.mastery_level = new_level
             target.times_tested += 1
@@ -176,7 +185,7 @@ class UserStore:
 
             await db_session.commit()
 
-    async def log_learning_target(self, telegram_id: str, topic: str, user_mistake: str, correct_form: str) -> bool:
+    async def log_learning_target(self, telegram_id: str, topic: str, user_mistake: str, correct_form: str, session_id: str = None) -> bool:
         """Log a new learning target for the user."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -197,6 +206,7 @@ class UserStore:
 
             target = LearningTarget(
                 telegram_id=telegram_id,
+                session_id=session_id,
                 topic=topic,
                 user_mistake=user_mistake,
                 correct_form=correct_form
@@ -224,3 +234,29 @@ class UserStore:
             user.correction_preference = valid_preference
             await db_session.commit()
             return True
+
+    async def get_all_learning_targets(self, telegram_id: str, limit: int = 20) -> list[dict]:
+        """Fetch all learning targets for a user, ordered by most recent first."""
+        async with AsyncSessionLocal() as db_session:
+            result = await db_session.execute(
+                select(LearningTarget)
+                .where(LearningTarget.telegram_id == telegram_id)
+                .order_by(LearningTarget.id.desc())
+                .limit(limit)
+            )
+            targets = result.scalars().all()
+            return [t.to_dict() for t in targets]
+
+    async def get_learning_targets_by_session(self, session_id: str) -> list[dict]:
+        """Fetch all learning targets logged during a specific session."""
+        if not session_id:
+            return []
+        
+        async with AsyncSessionLocal() as db_session:
+            result = await db_session.execute(
+                select(LearningTarget)
+                .where(LearningTarget.session_id == session_id)
+                .order_by(LearningTarget.id.asc())
+            )
+            targets = result.scalars().all()
+            return [t.to_dict() for t in targets]

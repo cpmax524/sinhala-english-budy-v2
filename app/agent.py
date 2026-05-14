@@ -27,6 +27,7 @@ from google.genai import types
 from google.adk.agents import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
+from google.adk.tools import ToolContext
 from google.adk.apps import App
 from google.adk.models.google_llm import Gemini
 from google.adk.tools import google_search
@@ -34,9 +35,6 @@ from google.adk.tools import google_search
 import pathlib
 import asyncio
 from jinja2 import Template
-from google.adk.skills import load_skill_from_dir
-from google.adk.tools import skill_toolset
-
 from app.prompts import SYSTEM_INSTRUCTION
 from core.user_store import UserStore
 
@@ -62,23 +60,18 @@ def render_instruction(context: ReadonlyContext) -> str:
         "user_role": state.get("user_role", ""),
         "user_interests": state.get("user_interests", ""),
         "english_level": state.get("user:english_level", "assessing"),
-        "correction_preference": state.get("user:correction_preference", "instant_pause"),
+        "user_correction_preference": state.get("user:correction_preference", "instant_pause"),
         "onboarding_complete": state.get("onboarding_complete", "false"),
         "is_returning_user": state.get("is_returning_user", "false"),
         "call_count": state.get("call_count", 0),
+        "missing_onboarding_fields": state.get("missing_onboarding_fields", []),
         "recent_memories": state.get("recent_memories", "No memories yet — this might be a new friend."),
         "due_learning_targets": state.get("due_learning_targets", "No targets due for review."),
+        "learning_targets": state.get("learning_targets", "No learning targets logged yet."),
     }
     return _instruction_template.render(**template_vars)
 
-# ---------------------------------------------------------------------------
-# In-Memory Mistake Tracker (Bug #2 workaround)
-# ---------------------------------------------------------------------------
-# The Live API's bidi streaming session may not flush ADK state back to the
-# DatabaseSessionService before the call-end handler fires. This dict keeps
-# a process-level copy keyed by user_id so the post-call summary can always
-# read the mistakes reliably.
-_session_mistakes: dict[str, list[dict]] = {}
+# Removed _session_mistakes dict (now using DB session_id queries directly)
 
 # ---------------------------------------------------------------------------
 # Environment setup for Google AI Studio (API Key mode)
@@ -104,12 +97,12 @@ LIVE_MODEL = (
 # Tools
 # ---------------------------------------------------------------------------
 async def update_user_profile(
-    name: str = "unknown",
-    age: int = 0,
-    gender: str = "unknown",
-    role: str = "",
-    interests: str = "",
-    callback_context: CallbackContext = None,
+    name: str,
+    age: int,
+    gender: str,
+    role: str,
+    interests: str,
+    tool_context: ToolContext,
 ) -> str:
     """
     Updates the user's profile with information gathered during the conversation.
@@ -127,12 +120,8 @@ async def update_user_profile(
         gender: The user's gender ("male", "female", "other") — ONLY if clearly indicated.
         role: The user's job or student role. Leave empty if unknown or under 16.
         interests: Comma-separated list of interests the user EXPLICITLY mentioned.
-        callback_context: The ADK callback context (auto-injected).
     """
-    if not callback_context:
-        return "Error: runtime context missing."
-
-    c = callback_context.state
+    c = tool_context.state
 
     # --- Validation: Reject suspicious/fabricated data ---
     # Common hallucinated placeholder names the LLM might invent
@@ -205,7 +194,7 @@ async def update_user_profile(
 async def extract_and_save_memory(
     fact: str,
     category: str,
-    callback_context: CallbackContext = None,
+    tool_context: ToolContext,
 ) -> str:
     """
     Saves a personal fact about the user to long-term memory.
@@ -216,10 +205,12 @@ async def extract_and_save_memory(
         fact: The atomic fact to save (e.g., "User's sister is getting married next month")
         category: Category of the fact (e.g., "personal", "work", "hobby", "family", "health", "education", "goal")
     """
-    if not callback_context:
-        return "Error: runtime context missing."
-
-    user_id = callback_context.state.get("user:telegram_id", "")
+    user_id = getattr(tool_context, "user_id", None)
+    if not user_id and getattr(tool_context, "session", None):
+        user_id = getattr(tool_context.session, "user_id", None)
+    if not user_id:
+        user_id = tool_context.state.get("user:telegram_id", "")
+        
     if not user_id:
         return "Error: No user ID in state."
 
@@ -238,7 +229,7 @@ async def extract_and_save_memory(
 async def update_learning_progress(
     target_id: int,
     success: bool,
-    callback_context: CallbackContext = None,
+    tool_context: ToolContext,
 ) -> str:
     """
     Updates the mastery level of a learning target after testing the user.
@@ -248,9 +239,6 @@ async def update_learning_progress(
         target_id: The ID of the learning target being tested.
         success: True if the user got it right, False if they still made the mistake.
     """
-    if not callback_context:
-        return "Error: runtime context missing."
-
     user_store = UserStore()
     await user_store.update_learning_progress(target_id, success)
 
@@ -259,7 +247,7 @@ async def update_learning_progress(
 
 async def change_correction_style(
     preference: str,
-    callback_context: CallbackContext = None,
+    tool_context: ToolContext,
 ) -> str:
     """
     Changes how the user wants to be corrected during conversations.
@@ -269,18 +257,20 @@ async def change_correction_style(
         preference: Either "recast_only" (correct naturally in replies) or
                     "instant_pause" (pause and explain the mistake directly).
     """
-    if not callback_context:
-        return "Error: runtime context missing."
-
     if preference not in ("recast_only", "instant_pause"):
         return f"Error: Invalid preference '{preference}'."
 
-    user_id = callback_context.state.get("user:telegram_id", "")
+    user_id = getattr(tool_context, "user_id", None)
+    if not user_id and getattr(tool_context, "session", None):
+        user_id = getattr(tool_context.session, "user_id", None)
+    if not user_id:
+        user_id = tool_context.state.get("user:telegram_id", "")
+        
     if not user_id:
         return "Error: No user ID in state."
 
     # Update local state immediately
-    callback_context.state["user:correction_preference"] = preference
+    tool_context.state["user:correction_preference"] = preference
 
     # Update DB asynchronously
     user_store = UserStore()
@@ -293,7 +283,7 @@ async def log_learning_target(
     topic: str,
     user_mistake: str,
     correct_form: str,
-    callback_context: CallbackContext = None,
+    tool_context: ToolContext,
 ) -> str:
     """
     Saves a specific grammar mistake or vocabulary item to the user's learning targets list.
@@ -303,17 +293,18 @@ async def log_learning_target(
         topic: The general grammar or vocabulary topic (e.g., "past tense verbs", "prepositions").
         user_mistake: The exact sentence or phrase the user said incorrectly.
         correct_form: The corrected sentence or phrase.
-        callback_context: The ADK callback context (auto-injected).
     """
-    if not callback_context:
-        return "Error: runtime context missing."
+    user_id = getattr(tool_context, "user_id", None)
+    if not user_id and getattr(tool_context, "session", None):
+        user_id = getattr(tool_context.session, "user_id", None)
+    if not user_id:
+        user_id = tool_context.state.get("user:telegram_id", "")
         
-    user_id = callback_context.state.get("user:telegram_id", "")
     if not user_id:
         return "Error: No user ID in state."
         
-    if "current_session_mistakes" not in callback_context.state:
-        callback_context.state["current_session_mistakes"] = []
+    if "current_session_mistakes" not in tool_context.state:
+        tool_context.state["current_session_mistakes"] = []
 
     mistake_entry = {
         "topic": topic,
@@ -321,16 +312,16 @@ async def log_learning_target(
         "correct_form": correct_form,
     }
 
-    callback_context.state["current_session_mistakes"].append(mistake_entry)
-
-    # Also write to the process-level in-memory tracker so the post-call
-    # summary can read mistakes even if Live API doesn't flush ADK state.
-    if user_id not in _session_mistakes:
-        _session_mistakes[user_id] = []
-    _session_mistakes[user_id].append(mistake_entry)
+    tool_context.state["current_session_mistakes"].append(mistake_entry)
 
     user_store = UserStore()
-    saved = await user_store.log_learning_target(user_id, topic, user_mistake, correct_form)
+    saved = await user_store.log_learning_target(
+        telegram_id=user_id, 
+        topic=topic, 
+        user_mistake=user_mistake, 
+        correct_form=correct_form,
+        session_id=tool_context.session.id if tool_context.session else None
+    )
 
     if not saved:
         return f"Warning: Logged '{topic}' to session state but DB save failed — user may not exist yet."
@@ -348,10 +339,11 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
 
     This callback runs on EVERY agent invocation (every turn). It:
     1. Sets safe defaults for any missing state keys.
-    2. Reloads user profile from DB as a safety net if critical keys
-       are missing (e.g., after state deserialization issues).
+    2. ALWAYS loads user profile from DB to keep state in sync.
     3. Fetches and formats episodic memories and SRS targets into
        human-readable strings for the Jinja2 prompt template.
+    4. Fetches full learning targets history for prompt context.
+    5. Dynamically recalculates missing onboarding fields.
     """
     state = callback_context.state
 
@@ -367,33 +359,48 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         "user_role": "",
         "user_interests": "",
         "onboarding_complete": "false",
+        "missing_onboarding_fields": ["name", "age", "gender", "interests"],
         "call_count": 0,
         "is_returning_user": "false",
-        "learning_targets": [],
+        "learning_targets": "No learning targets logged yet.",
         "recent_memories": "No memories yet — this might be a new friend.",
         "due_learning_targets": "No targets due for review.",
         "current_session_mistakes": [],
+        "prompt_flag_is_first_turn": "false",
     }
 
     for key, value in defaults.items():
         if key not in state:
             state[key] = value
 
-    # --- Phase 2: Safety-net profile reload from DB ---
-    # If critical profile keys are still at their defaults, attempt to
-    # reload from the database. This catches cases where ADK state was
-    # reset or deserialization dropped keys between turns.
-    user_id = state.get("user:telegram_id", "")
+    # --- Phase 1.5: Handle New Call Flagging ---
+    # If the session manager marked this as the first turn of a new call,
+    # set the prompt flag to true, and then immediately reset the session flag
+    # so it doesn't trigger on subsequent turns.
+    if state.get("is_first_turn") == "true":
+        state["prompt_flag_is_first_turn"] = "true"
+        state["is_first_turn"] = "false"
+    else:
+        state["prompt_flag_is_first_turn"] = "false"
+
+    # --- Phase 2: ALWAYS load profile from DB ---
+    # Previously gated behind `needs_reload` which never triggered for
+    # onboarded users, causing learning targets to never be injected.
+    # Now we ALWAYS load when we have a user_id.
+    user_id = getattr(callback_context, "user_id", None)
+    if not user_id and getattr(callback_context, "session", None):
+        user_id = getattr(callback_context.session, "user_id", None)
+    if not user_id:
+        user_id = state.get("user:telegram_id", "")
+        
     if user_id:
         user_store = UserStore()
+        profile = await user_store.load_profile(user_id)
 
-        needs_reload = (
-            state.get("user_name") == "unknown"
-            and state.get("onboarding_complete") == "false"
-        )
-        if needs_reload:
-            profile = await user_store.load_profile(user_id)
-            if profile:
+        if profile:
+            # Only restore profile fields if state appears stale
+            # (e.g., after ADK state deserialization issues)
+            if state.get("user_name") == "unknown" and profile.get("user_name", "unknown") != "unknown":
                 state["user_name"] = profile.get("user_name", "unknown")
                 state["user_age"] = profile.get("user_age", 0)
                 state["user_gender"] = profile.get("user_gender", "unknown")
@@ -404,9 +411,15 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
                 state["user:correction_preference"] = profile.get("correction_preference", "instant_pause")
                 state["user:english_goal"] = profile.get("english_goal", "")
                 state["call_count"] = profile.get("call_count", 0)
-                state["is_returning_user"] = (
-                    "true" if profile.get("onboarding_complete") == "true" else "false"
-                )
+
+            # Always sync is_returning_user and call_count from DB
+            state["is_returning_user"] = (
+                "true" if state.get("onboarding_complete") == "true" else "false"
+            )
+            # Sync call_count from DB if it's ahead of state
+            db_call_count = profile.get("call_count", 0)
+            if db_call_count > state.get("call_count", 0):
+                state["call_count"] = db_call_count
 
         # --- Phase 3: Fetch and format episodic memories ---
         memories = await user_store.get_relevant_memories(user_id, limit=3)
@@ -430,25 +443,41 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
                 mastery = t.get("mastery_level", 0)
                 formatted_lines.append(
                     f"- Target #{target_id} ({topic}, mastery {mastery}/3): "
-                    f'"{mistake}" → "{correct}"'
+                    f'"{ mistake}" → "{correct}"'
                 )
             state["due_learning_targets"] = "\n".join(formatted_lines)
 
+        # --- Phase 5: Fetch FULL learning targets history ---
+        # Uses dedicated method instead of relying on profile dict
+        all_targets = await user_store.get_all_learning_targets(user_id, limit=20)
+        if all_targets:
+            formatted_history = []
+            for t in all_targets:
+                formatted_history.append(
+                    f"- Topic: {t.get('topic', 'unknown')} | "
+                    f"Mistake: '{t.get('user_mistake', '')}' | "
+                    f"Correct: '{t.get('correct_form', '')}'"
+                )
+            state["learning_targets"] = "\n".join(formatted_history)
 
-# ---------------------------------------------------------------------------
-# ADK Skills Initialization
-# ---------------------------------------------------------------------------
-SKILLS_DIR = pathlib.Path(__file__).parent / "skills"
+        # --- Phase 6: Enforce correction preference for learning phase ---
+        if state.get("onboarding_complete") == "true":
+            state["user:correction_preference"] = "instant_pause"
 
-my_skills = skill_toolset.SkillToolset(
-    skills=[
-        load_skill_from_dir(SKILLS_DIR / "onboarding-skill"),
-        load_skill_from_dir(SKILLS_DIR / "dynamic-memory-skill"),
-        load_skill_from_dir(SKILLS_DIR / "catch-up-skill"),
-        load_skill_from_dir(SKILLS_DIR / "adaptive-conversation-skill"),
-        load_skill_from_dir(SKILLS_DIR / "grammar-correction-skill"),
-    ]
-)
+        # --- Phase 7: Dynamically calculate missing onboarding fields ---
+        missing_fields = []
+        if state.get("user_name") == "unknown":
+            missing_fields.append("name")
+        if state.get("user_age", 0) == 0:
+            missing_fields.append("age")
+        if state.get("user_gender") == "unknown":
+            missing_fields.append("gender")
+        if not state.get("user_interests"):
+            missing_fields.append("interests")
+        state["missing_onboarding_fields"] = missing_fields
+
+
+# Skills architecture has been deprecated in favor of a monolithic system prompt.
 
 # ---------------------------------------------------------------------------
 # Root Agent Definition
@@ -479,8 +508,7 @@ root_agent = Agent(
         log_learning_target,
         extract_and_save_memory,
         update_learning_progress,
-        change_correction_style,
-        my_skills
+        change_correction_style
     ],
     before_agent_callback=initialize_tutor_state,
 )

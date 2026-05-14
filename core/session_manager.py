@@ -47,16 +47,20 @@ class SessionManager:
     async def get_or_create_session(
         self,
         telegram_user_id: int,
+        session_id: str,
         phone_number: str = "unknown",
         first_name: str = "unknown",
         increment_call: bool = False,
     ) -> Session:
         """
         Retrieve an existing session or create a new one for a caller.
-        Injects loaded profile data into the ADK Session state.
+        Injects loaded profile data into the ADK Session state via ADK standard mechanisms
+        (state_delta) to avoid directly modifying session.state outside of contexts.
         """
+        import time
+        from google.adk.events import Event, EventActions
+
         user_id = str(telegram_user_id)
-        session_id = user_id  # Use same ID for simplicity in 1:1 mapping
 
         # Try to retrieve existing session
         session = await self.session_service.get_session(
@@ -65,76 +69,100 @@ class SessionManager:
             session_id=session_id,
         )
 
+        profile = await self.user_store.load_profile(user_id)
+        
+        # Calculate new call count
+        call_count = profile.get("call_count", 0) if profile else 0
+        if increment_call:
+            call_count += 1
+            await self.user_store.save_profile(user_id, {"call_count": call_count})
+
         if session is None:
-            # Create new session for first-time caller (at least in this process run)
+            # Prepare initial state for new session
+            initial_state = {
+                "current_session_mistakes": [],
+                "user:telegram_id": user_id,
+                "phone_number": phone_number,
+                "is_first_turn": "true",
+            }
+            if profile:
+                initial_state.update({
+                    "user_name": profile.get("user_name", first_name),
+                    "user_age": profile.get("user_age", 0),
+                    "user_gender": profile.get("user_gender", "unknown"),
+                    "user_role": profile.get("user_role", ""),
+                    "user_interests": profile.get("user_interests", ""),
+                    "onboarding_complete": profile.get("onboarding_complete", "false"),
+                    "user:english_level": profile.get("english_level", "assessing"),
+                    "user:correction_preference": profile.get("correction_preference", "instant_pause"),
+                    "user:english_goal": profile.get("english_goal", ""),
+                    "call_count": call_count,
+                    "is_returning_user": "true" if profile.get("onboarding_complete", "false") == "true" else "false",
+                })
+            else:
+                initial_state.update({
+                    "user_name": first_name,
+                    "user_age": 0,
+                    "user_gender": "unknown",
+                    "user_role": "",
+                    "user_interests": "",
+                    "onboarding_complete": "false",
+                    "user:english_level": "assessing",
+                    "user:correction_preference": "instant_pause",
+                    "user:english_goal": "",
+                    "call_count": call_count,
+                    "is_returning_user": "false",
+                })
+
             session = await self.session_service.create_session(
                 app_name=self.app_name,
                 user_id=user_id,
                 session_id=session_id,
+                state=initial_state
             )
-
-        # Load profile from user_store to sync with ADK state
-        profile = await self.user_store.load_profile(user_id)
-
-        # Clear session mistakes for the new call
-        session.state["current_session_mistakes"] = []
-
-        # Prefix core persistent properties with user: for clarity and persistence across sessions
-        if profile:
-            # User profile exists, inject into state
-            session.state["user:telegram_id"] = user_id
-            session.state["user_name"] = profile.get("user_name", first_name)
-            session.state["user_age"] = profile.get("user_age", 0)
-            session.state["user_gender"] = profile.get("user_gender", "unknown")
-            session.state["user_role"] = profile.get("user_role", "")
-            session.state["user_interests"] = profile.get("user_interests", "")
-            session.state["onboarding_complete"] = profile.get("onboarding_complete", "false")
-
-            session.state["user:english_level"] = profile.get("english_level", session.state.get("user:english_level", "assessing"))
-            session.state["user:correction_preference"] = profile.get("correction_preference", session.state.get("user:correction_preference", "instant_pause"))
-            session.state["user:english_goal"] = profile.get("english_goal", session.state.get("user:english_goal", ""))
-
-            # Increment call count only when explicitly requested
-            call_count = profile.get("call_count", 0)
-            if increment_call:
-                call_count += 1
-                # Persist the incremented count to DB immediately so it
-                # survives even if the ADK session state is lost later.
-                await self.user_store.save_profile(user_id, {"call_count": call_count})
-            session.state["call_count"] = call_count
-            session.state["is_returning_user"] = "true" if session.state["onboarding_complete"] == "true" else "false"
+            
+            logger.info(
+                "Created new session. User: %s, Returning: %s, Calls: %s",
+                initial_state["user_name"],
+                initial_state["is_returning_user"],
+                initial_state["call_count"]
+            )
         else:
-            # Completely new user
-            session.state["user:telegram_id"] = user_id
-            session.state["user_name"] = first_name
-            session.state["user_age"] = 0
-            session.state["user_gender"] = "unknown"
-            session.state["user_role"] = ""
-            session.state["user_interests"] = ""
-            session.state["onboarding_complete"] = "false"
-
-            session.state["user:english_level"] = "assessing"
-            session.state["user:correction_preference"] = "instant_pause"
-            session.state["user:english_goal"] = ""
-
-            session.state["call_count"] = 1 if increment_call else 0
-            session.state["is_returning_user"] = "false"
-
-        session.state["phone_number"] = phone_number
-
-        logger.info(
-            "Session loaded. User: %s, Returning: %s, Onboarding: %s, Calls: %s",
-            session.state["user_name"],
-            session.state["is_returning_user"],
-            session.state["onboarding_complete"],
-            session.state["call_count"]
-        )
+            # For existing sessions, use append_event to safely update state (e.g. clear mistakes, update calls)
+            state_delta = {
+                "current_session_mistakes": [],
+                "call_count": call_count,
+                "user:telegram_id": user_id,  # Ensure this is present even for older sessions
+                "is_first_turn": "true",
+            }
+            actions = EventActions(state_delta=state_delta)
+            system_event = Event(
+                invocation_id="new_call_start",
+                author="system",
+                actions=actions,
+                timestamp=time.time()
+            )
+            await self.session_service.append_event(session, system_event)
+            
+            # Fetch the updated session so we have the latest state internally
+            session = await self.session_service.get_session(
+                app_name=self.app_name,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            
+            logger.info(
+                "Loaded existing session. User ID: %s, Calls: %s",
+                user_id,
+                call_count
+            )
 
         return session
 
     async def save_session_state(
         self,
         telegram_user_id: int,
+        session_id: str,
     ) -> None:
         """
         Persist session state for a user to disk.
@@ -145,7 +173,7 @@ class SessionManager:
         session = await self.session_service.get_session(
             app_name=self.app_name,
             user_id=user_id,
-            session_id=user_id,
+            session_id=session_id,
         )
 
         if session is None:
