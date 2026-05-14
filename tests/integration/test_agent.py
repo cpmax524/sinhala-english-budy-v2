@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
+
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
-from core.database import DATABASE_URL
 from google.genai import types
 
 from app.agent import root_agent
+from core.database import DATABASE_URL
 
-
-import asyncio
 
 def test_agent_stream() -> None:
     """
@@ -31,7 +31,9 @@ def test_agent_stream() -> None:
 
     session_service = DatabaseSessionService(db_url=DATABASE_URL)
 
-    session = asyncio.run(session_service.create_session(user_id="test_user", app_name="test"))
+    session = asyncio.run(
+        session_service.create_session(user_id="test_user", app_name="test")
+    )
     runner = Runner(agent=root_agent, session_service=session_service, app_name="test")
 
     message = types.Content(

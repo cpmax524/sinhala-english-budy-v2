@@ -9,14 +9,16 @@ import asyncio
 import logging
 import sys
 
-from pyrogram import idle
 import pyrogram.errors
+from pyrogram import idle
 from pyrogram.errors.exceptions import Forbidden
 
 # Monkey-patch pyrogram.errors to include GroupcallForbidden for pytgcalls compatibility
 if not hasattr(pyrogram.errors, "GroupcallForbidden"):
+
     class GroupcallForbidden(Forbidden):
         pass
+
     pyrogram.errors.GroupcallForbidden = GroupcallForbidden
 
 # Configure logging early so config/agent loading messages are captured
@@ -37,8 +39,9 @@ _config = load_config()
 
 from google.adk import Runner
 
-from app.agent import root_agent, LIVE_MODEL
+from app.agent import LIVE_MODEL, root_agent
 from bridge.call_handler import register_call_handlers
+from bridge.message_handler import register_message_handlers
 from bridge.telegram_client import create_telegram_client
 from core.session_manager import SessionManager
 
@@ -50,7 +53,8 @@ async def main():
         # 1. Use config loaded at module level (before agent import)
         config = _config
         logger.info(
-            "Config loaded. Using Vertex AI" if config.google.use_vertex_ai
+            "Config loaded. Using Vertex AI"
+            if config.google.use_vertex_ai
             else "Config loaded. Using AI Studio (API Key)."
         )
         logger.info("Live model: %s", LIVE_MODEL)
@@ -68,6 +72,7 @@ async def main():
         # 3. Setup Telegram Client & Audio Call handler
         app, call_py = create_telegram_client(config)
         register_call_handlers(app, call_py, session_manager, config)
+        register_message_handlers(app)
 
         # 4. Start Telegram Userbot
         logger.info("Logging into Telegram (Userbot)...")
@@ -86,7 +91,7 @@ async def main():
         await call_py.stop()
         await app.stop()
 
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to start application:")
         sys.exit(1)
 

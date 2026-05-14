@@ -20,6 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy declarative models."""
+
     pass
 
 
@@ -30,6 +31,7 @@ class CorrectionPreference(str, enum.Enum):
 
 class User(Base):
     """Represents a user profile."""
+
     __tablename__ = "users"
 
     telegram_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -39,7 +41,9 @@ class User(Base):
     user_gender: Mapped[str] = mapped_column(String, default="unknown")
     user_role: Mapped[str] = mapped_column(String, default="")
     user_interests: Mapped[str] = mapped_column(Text, default="")
-    onboarding_complete: Mapped[str] = mapped_column(String, default="false") # keeping string to match existing code logic ('true' / 'false')
+    onboarding_complete: Mapped[str] = mapped_column(
+        String, default="false"
+    )  # keeping string to match existing code logic ('true' / 'false')
     english_level: Mapped[str] = mapped_column(String, default="assessing")
     call_count: Mapped[int] = mapped_column(Integer, default=0)
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -74,12 +78,13 @@ class User(Base):
             "last_seen": self.last_seen.isoformat(),
             "correction_preference": self.correction_preference,
             "english_goal": self.english_goal,
-            "learning_targets": [lt.to_dict() for lt in self.learning_targets]
+            "learning_targets": [lt.to_dict() for lt in self.learning_targets],
         }
 
 
 class UserMemory(Base):
     """Represents a long-term episodic memory for a user."""
+
     __tablename__ = "user_memories"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -99,12 +104,13 @@ class UserMemory(Base):
             "category": self.category,
             "created_at": self.created_at.isoformat(),
             "last_referenced": self.last_referenced.isoformat(),
-            "importance_score": self.importance_score
+            "importance_score": self.importance_score,
         }
 
 
 class LearningTarget(Base):
     """Represents a learning target or mistake correction for a user."""
+
     __tablename__ = "learning_targets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -130,8 +136,39 @@ class LearningTarget(Base):
             "correct_form": self.correct_form,
             "mastery_level": self.mastery_level,
             "times_tested": self.times_tested,
-            "last_tested_date": self.last_tested_date.isoformat() if self.last_tested_date else None,
-            "next_test_due": self.next_test_due.isoformat() if self.next_test_due else None
+            "last_tested_date": self.last_tested_date.isoformat()
+            if self.last_tested_date
+            else None,
+            "next_test_due": self.next_test_due.isoformat()
+            if self.next_test_due
+            else None,
+        }
+
+
+class SearchReport(Base):
+    """Represents a deep search report for a user."""
+
+    __tablename__ = "search_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[str] = mapped_column(String, ForeignKey("users.telegram_id"))
+    report_name: Mapped[str] = mapped_column(String, default="")
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    plan_content: Mapped[str] = mapped_column(Text, default="")
+    final_report_content: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String, default="pending_approval")
+
+    user: Mapped["User"] = relationship("User")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "telegram_id": self.telegram_id,
+            "report_name": self.report_name,
+            "timestamp": self.timestamp.isoformat(),
+            "plan_content": self.plan_content,
+            "final_report_content": self.final_report_content,
+            "status": self.status,
         }
 
 
@@ -146,9 +183,11 @@ AsyncSessionLocal = async_sessionmaker(
     engine, expire_on_commit=False, class_=AsyncSession
 )
 
+
 async def init_db() -> None:
     """Initialize the database schema."""
     import os
+
     os.makedirs("data", exist_ok=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

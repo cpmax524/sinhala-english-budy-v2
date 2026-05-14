@@ -1,4 +1,6 @@
-import sqlite3, json, os
+import json
+import os
+import sqlite3
 
 os.chdir(r"d:\PROJECTS\ANTIGRAVITY\english-telegram\sinhala-english-tutor")
 conn = sqlite3.connect("data/tutor.db")
