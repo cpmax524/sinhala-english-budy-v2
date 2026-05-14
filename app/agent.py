@@ -410,11 +410,11 @@ async def generate_and_send_plan_task(telegram_id: str, topic: str):
 
         # Save to DB
         user_store = UserStore()
-        report_name = f"Research on {topic}"
+        report_topic = f"Research on {topic}"
         report_id = await user_store.save_search_report(
             telegram_id=telegram_id,
-            report_name=report_name,
-            plan_content=plan_content,
+            report_topic=report_topic,
+            search_plan_content=plan_content,
             status="pending_approval",
         )
 
@@ -460,7 +460,7 @@ async def delegate_deep_search(
     # Launch background task to generate the plan
     asyncio.create_task(generate_and_send_plan_task(user_id, topic))
 
-    return "Deep search task has been delegated to the background. You MUST now inform the user that their search plan is being generated and will be sent via text message, and then organically resume the previous conversation."
+    return "Deep search task has been delegated to the background. You MUST now inform the user that their search plan is being generated and will be sent via text message. CRITICAL REQUIREMENT: Immediately after saying this, you MUST organically resume the exact conversation or topic you were discussing prior to this request. Do NOT say 'what were we talking about?' or 'let's continue'. Just seamlessly continue the previous topic or roleplay."
 
 
 # ---------------------------------------------------------------------------
