@@ -1,4 +1,4 @@
-import sqlite3, json
+import sqlite3
 
 conn = sqlite3.connect("data/tutor.db")
 c = conn.cursor()

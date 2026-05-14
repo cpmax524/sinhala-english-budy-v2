@@ -52,24 +52,28 @@ async def bridge_audio_to_gemini(
         proactivity=types.ProactivityConfig(proactive_audio=True),
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name="Leda"
-                )
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Leda")
             )
-        )
+        ),
     )
 
     client_connected = asyncio.Event()
     writer_ref = []
 
-    async def record_handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def record_handle_client(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
         """Receives audio from Telegram (FFmpeg) and sends to Gemini."""
-        logger.info("Record client connected from %s", writer.get_extra_info('peername'))
+        logger.info(
+            "Record client connected from %s", writer.get_extra_info("peername")
+        )
         try:
             while True:
                 data = await reader.read(4096)
                 if not data:
-                    logger.warning("Record client reader returned empty bytes! EOF reached.")
+                    logger.warning(
+                        "Record client reader returned empty bytes! EOF reached."
+                    )
                     break
                 queue.send_realtime(
                     types.Blob(
@@ -88,7 +92,9 @@ async def bridge_audio_to_gemini(
             queue.close()
             logger.info("Queue closed.")
 
-    async def play_handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def play_handle_client(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
         """Keeps connection open to send Gemini audio to Telegram (FFmpeg)."""
         writer_ref.append(writer)
         client_connected.set()
@@ -110,9 +116,17 @@ async def bridge_audio_to_gemini(
 
     # Start TCP Servers
     try:
-        record_server = await asyncio.start_server(record_handle_client, '127.0.0.1', record_port)
-        play_server = await asyncio.start_server(play_handle_client, '127.0.0.1', play_port)
-        logger.info("TCP bridge servers started on ports %s (rec) and %s (play)", record_port, play_port)
+        record_server = await asyncio.start_server(
+            record_handle_client, "127.0.0.1", record_port
+        )
+        play_server = await asyncio.start_server(
+            play_handle_client, "127.0.0.1", play_port
+        )
+        logger.info(
+            "TCP bridge servers started on ports %s (rec) and %s (play)",
+            record_port,
+            play_port,
+        )
         if ready_event:
             ready_event.set()
     except Exception as e:
@@ -136,7 +150,11 @@ async def bridge_audio_to_gemini(
             async for event in stream_gen:
                 if event.content and event.content.parts:
                     for part in event.content.parts:
-                        if part.inline_data and part.inline_data.mime_type and part.inline_data.mime_type.startswith('audio/pcm'):
+                        if (
+                            part.inline_data
+                            and part.inline_data.mime_type
+                            and part.inline_data.mime_type.startswith("audio/pcm")
+                        ):
                             target_writer.write(part.inline_data.data)
                             await target_writer.drain()
                         elif part.text:

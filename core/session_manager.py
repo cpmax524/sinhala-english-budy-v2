@@ -39,9 +39,7 @@ class SessionManager:
     @property
     def runner(self) -> Runner:
         if self._runner is None:
-            raise RuntimeError(
-                "Runner not initialized. Call set_runner() first."
-            )
+            raise RuntimeError("Runner not initialized. Call set_runner() first.")
         return self._runner
 
     async def get_or_create_session(
@@ -58,6 +56,7 @@ class SessionManager:
         (state_delta) to avoid directly modifying session.state outside of contexts.
         """
         import time
+
         from google.adk.events import Event, EventActions
 
         user_id = str(telegram_user_id)
@@ -70,7 +69,7 @@ class SessionManager:
         )
 
         profile = await self.user_store.load_profile(user_id)
-        
+
         # Calculate new call count
         call_count = profile.get("call_count", 0) if profile else 0
         if increment_call:
@@ -86,46 +85,56 @@ class SessionManager:
                 "is_first_turn": "true",
             }
             if profile:
-                initial_state.update({
-                    "user_name": profile.get("user_name", first_name),
-                    "user_age": profile.get("user_age", 0),
-                    "user_gender": profile.get("user_gender", "unknown"),
-                    "user_role": profile.get("user_role", ""),
-                    "user_interests": profile.get("user_interests", ""),
-                    "onboarding_complete": profile.get("onboarding_complete", "false"),
-                    "user:english_level": profile.get("english_level", "assessing"),
-                    "user:correction_preference": profile.get("correction_preference", "instant_pause"),
-                    "user:english_goal": profile.get("english_goal", ""),
-                    "call_count": call_count,
-                    "is_returning_user": "true" if profile.get("onboarding_complete", "false") == "true" else "false",
-                })
+                initial_state.update(
+                    {
+                        "user_name": profile.get("user_name", first_name),
+                        "user_age": profile.get("user_age", 0),
+                        "user_gender": profile.get("user_gender", "unknown"),
+                        "user_role": profile.get("user_role", ""),
+                        "user_interests": profile.get("user_interests", ""),
+                        "onboarding_complete": profile.get(
+                            "onboarding_complete", "false"
+                        ),
+                        "user:english_level": profile.get("english_level", "assessing"),
+                        "user:correction_preference": profile.get(
+                            "correction_preference", "instant_pause"
+                        ),
+                        "user:english_goal": profile.get("english_goal", ""),
+                        "call_count": call_count,
+                        "is_returning_user": "true"
+                        if profile.get("onboarding_complete", "false") == "true"
+                        else "false",
+                    }
+                )
             else:
-                initial_state.update({
-                    "user_name": first_name,
-                    "user_age": 0,
-                    "user_gender": "unknown",
-                    "user_role": "",
-                    "user_interests": "",
-                    "onboarding_complete": "false",
-                    "user:english_level": "assessing",
-                    "user:correction_preference": "instant_pause",
-                    "user:english_goal": "",
-                    "call_count": call_count,
-                    "is_returning_user": "false",
-                })
+                initial_state.update(
+                    {
+                        "user_name": first_name,
+                        "user_age": 0,
+                        "user_gender": "unknown",
+                        "user_role": "",
+                        "user_interests": "",
+                        "onboarding_complete": "false",
+                        "user:english_level": "assessing",
+                        "user:correction_preference": "instant_pause",
+                        "user:english_goal": "",
+                        "call_count": call_count,
+                        "is_returning_user": "false",
+                    }
+                )
 
             session = await self.session_service.create_session(
                 app_name=self.app_name,
                 user_id=user_id,
                 session_id=session_id,
-                state=initial_state
+                state=initial_state,
             )
-            
+
             logger.info(
                 "Created new session. User: %s, Returning: %s, Calls: %s",
                 initial_state["user_name"],
                 initial_state["is_returning_user"],
-                initial_state["call_count"]
+                initial_state["call_count"],
             )
         else:
             # For existing sessions, use append_event to safely update state (e.g. clear mistakes, update calls)
@@ -140,21 +149,19 @@ class SessionManager:
                 invocation_id="new_call_start",
                 author="system",
                 actions=actions,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
             await self.session_service.append_event(session, system_event)
-            
+
             # Fetch the updated session so we have the latest state internally
             session = await self.session_service.get_session(
                 app_name=self.app_name,
                 user_id=user_id,
                 session_id=session_id,
             )
-            
+
             logger.info(
-                "Loaded existing session. User ID: %s, Calls: %s",
-                user_id,
-                call_count
+                "Loaded existing session. User ID: %s, Calls: %s", user_id, call_count
             )
 
         return session
@@ -177,9 +184,7 @@ class SessionManager:
         )
 
         if session is None:
-            logger.warning(
-                "Cannot save state — no session found for user %s", user_id
-            )
+            logger.warning("Cannot save state — no session found for user %s", user_id)
             return
 
         # Load existing profile to merge and update
@@ -188,17 +193,34 @@ class SessionManager:
         # Copy current session state into profile
         profile["user_name"] = session.state.get("user_name", profile.get("user_name"))
         profile["user_age"] = session.state.get("user_age", profile.get("user_age"))
-        profile["user_gender"] = session.state.get("user_gender", profile.get("user_gender"))
+        profile["user_gender"] = session.state.get(
+            "user_gender", profile.get("user_gender")
+        )
         profile["user_role"] = session.state.get("user_role", profile.get("user_role"))
-        profile["user_interests"] = session.state.get("user_interests", profile.get("user_interests"))
-        profile["onboarding_complete"] = str(session.state.get("onboarding_complete", profile.get("onboarding_complete"))).lower()
+        profile["user_interests"] = session.state.get(
+            "user_interests", profile.get("user_interests")
+        )
+        profile["onboarding_complete"] = str(
+            session.state.get("onboarding_complete", profile.get("onboarding_complete"))
+        ).lower()
 
-        profile["english_level"] = session.state.get("user:english_level", profile.get("english_level", "assessing"))
-        profile["correction_preference"] = session.state.get("user:correction_preference", profile.get("correction_preference", "instant_pause"))
-        profile["english_goal"] = session.state.get("user:english_goal", profile.get("english_goal", ""))
+        profile["english_level"] = session.state.get(
+            "user:english_level", profile.get("english_level", "assessing")
+        )
+        profile["correction_preference"] = session.state.get(
+            "user:correction_preference",
+            profile.get("correction_preference", "instant_pause"),
+        )
+        profile["english_goal"] = session.state.get(
+            "user:english_goal", profile.get("english_goal", "")
+        )
 
-        profile["phone_number"] = session.state.get("phone_number", profile.get("phone_number"))
-        profile["call_count"] = int(session.state.get("call_count", profile.get("call_count", 1)))
+        profile["phone_number"] = session.state.get(
+            "phone_number", profile.get("phone_number")
+        )
+        profile["call_count"] = int(
+            session.state.get("call_count", profile.get("call_count", 1))
+        )
 
         await self.user_store.save_profile(user_id, profile)
         logger.info("Session state saved to DB for user %s", user_id)

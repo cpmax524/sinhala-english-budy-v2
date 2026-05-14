@@ -20,6 +20,7 @@ from core.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
+
 def register_call_handlers(
     app: Client,
     call_py: PyTgCalls,
@@ -29,7 +30,7 @@ def register_call_handlers(
     """
     Register incoming voice call handlers on the Pyrogram client.
     """
-    
+
     # Track active ADK session IDs for each ongoing phone call.
     # Key: Telegram Chat ID, Value: ADK Session ID
     active_calls: dict[int, str] = {}
@@ -43,20 +44,29 @@ def register_call_handlers(
         try:
             user = await app.get_users(chat_id)
             phone_number = user.phone_number or "Hidden"
-            first_name = user.first_name if hasattr(user, "first_name") and user.first_name else "unknown"
+            first_name = (
+                user.first_name
+                if hasattr(user, "first_name") and user.first_name
+                else "unknown"
+            )
         except Exception:
             phone_number = "Hidden"
             first_name = "unknown"
 
-        logger.info("📞 Incoming native ringing call from: %s (ID: %s, Name: %s)", phone_number, chat_id, first_name)
+        logger.info(
+            "📞 Incoming native ringing call from: %s (ID: %s, Name: %s)",
+            phone_number,
+            chat_id,
+            first_name,
+        )
 
         try:
             import time
-            
+
             # Generate a unique session ID for this specific phone call
             session_id = f"{chat_id}_{int(time.time())}"
             active_calls[chat_id] = session_id
-            
+
             # 1. Identify the user and retrieve ADK state
             await session_manager.get_or_create_session(
                 telegram_user_id=chat_id,
@@ -68,9 +78,10 @@ def register_call_handlers(
 
             # 2. Get dynamic available TCP ports for the ffmpeg bridge
             import socket
+
             def get_free_port():
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', 0))
+                    s.bind(("127.0.0.1", 0))
                     return s.getsockname()[1]
 
             record_port = get_free_port()
@@ -78,9 +89,24 @@ def register_call_handlers(
 
             # 3. Create the OUTGOING (play) stream
             play_cmd = [
-                'ffmpeg', '-loglevel', 'warning',
-                '-f', 's16le', '-ar', '16000', '-ac', '1', '-i', f'tcp://127.0.0.1:{play_port}',
-                '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'
+                "ffmpeg",
+                "-loglevel",
+                "warning",
+                "-f",
+                "s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-i",
+                f"tcp://127.0.0.1:{play_port}",
+                "-f",
+                "s16le",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "pipe:1",
             ]
             play_stream = Stream(
                 microphone=AudioStream(
@@ -92,12 +118,29 @@ def register_call_handlers(
 
             # 4. Create the INCOMING (record) stream
             record_cmd = [
-                'ffmpeg', '-y', '-report', '-loglevel', 'info',
-                '-f', 's16le', '-ar', '48000', '-ac', '2', '-i', 'pipe:0',
-                '-f', 's16le', '-ar', '16000', '-ac', '1', f'tcp://127.0.0.1:{record_port}'
+                "ffmpeg",
+                "-y",
+                "-report",
+                "-loglevel",
+                "info",
+                "-f",
+                "s16le",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-i",
+                "pipe:0",
+                "-f",
+                "s16le",
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                f"tcp://127.0.0.1:{record_port}",
             ]
             record_stream = Stream(
-                microphone=AudioStream( # Note: pytgcalls uses 'microphone' internally for recording streams as well
+                microphone=AudioStream(  # Note: pytgcalls uses 'microphone' internally for recording streams as well
                     media_source=MediaSource.SHELL,
                     path=list_to_cmd(record_cmd),
                     parameters=AudioParameters(48000, 2),
@@ -106,6 +149,7 @@ def register_call_handlers(
 
             # 5. Start audio bridging over the TCP sockets first
             import asyncio
+
             ready_event = asyncio.Event()
 
             asyncio.create_task(  # noqa: RUF006
@@ -116,7 +160,7 @@ def register_call_handlers(
                     session_id=session_id,
                     record_port=record_port,
                     play_port=play_port,
-                    ready_event=ready_event
+                    ready_event=ready_event,
                 )
             )
 
@@ -133,11 +177,17 @@ def register_call_handlers(
         except Exception as e:
             logger.exception("Error handling native incoming call: %s", e)
 
-    @call_py.on_update(call_filters.chat_update(ChatUpdate.Status.CLOSED_VOICE_CHAT | ChatUpdate.Status.LEFT_CALL | ChatUpdate.Status.DISCARDED_CALL))
+    @call_py.on_update(
+        call_filters.chat_update(
+            ChatUpdate.Status.CLOSED_VOICE_CHAT
+            | ChatUpdate.Status.LEFT_CALL
+            | ChatUpdate.Status.DISCARDED_CALL
+        )
+    )
     async def stream_end_handler(client: PyTgCalls, update: ChatUpdate):
         """Handles call hang-ups to gracefully close the loop and save state."""
         logger.info("📞 Call ended or discarded for chat: %s", update.chat_id)
-        
+
         session_id = active_calls.pop(update.chat_id, str(update.chat_id))
 
         # Save session state
@@ -152,9 +202,9 @@ def register_call_handlers(
         # Generate and send dynamic post-call summary using LLM
         try:
             import os
-            from datetime import datetime, timedelta
 
             from google import genai
+
             from core.user_store import UserStore
 
             session = await session_manager.session_service.get_session(
@@ -163,7 +213,9 @@ def register_call_handlers(
                 session_id=session_id,
             )
             if not session:
-                logger.warning("No session found for post-call summary for %s", update.chat_id)
+                logger.warning(
+                    "No session found for post-call summary for %s", update.chat_id
+                )
                 return
 
             user_id_str = str(update.chat_id)
@@ -177,28 +229,41 @@ def register_call_handlers(
             state_mistakes = session.state.get("current_session_mistakes", [])
             if state_mistakes:
                 current_session_mistakes = state_mistakes
-                logger.info("Post-call: Found %d mistakes from ADK state", len(current_session_mistakes))
+                logger.info(
+                    "Post-call: Found %d mistakes from ADK state",
+                    len(current_session_mistakes),
+                )
 
             # Source 2: DB by session_id (the ADK session ID = telegram user ID)
             if not current_session_mistakes:
-                db_session_mistakes = await user_store.get_learning_targets_by_session(user_id_str)
+                db_session_mistakes = await user_store.get_learning_targets_by_session(
+                    user_id_str
+                )
                 if db_session_mistakes:
                     current_session_mistakes = db_session_mistakes
-                    logger.info("Post-call: Found %d mistakes from DB (session_id)", len(current_session_mistakes))
+                    logger.info(
+                        "Post-call: Found %d mistakes from DB (session_id)",
+                        len(current_session_mistakes),
+                    )
 
             # Source 3: DB by telegram_id — all targets for this user (last resort)
             if not current_session_mistakes:
-                all_targets = await user_store.get_all_learning_targets(user_id_str, limit=5)
+                all_targets = await user_store.get_all_learning_targets(
+                    user_id_str, limit=5
+                )
                 if all_targets:
                     # Only use targets created in the last hour (likely from this call)
                     recent_targets = []
                     for t in all_targets:
-                        created = t.get("created_at") or t.get("last_tested_date")
+                        t.get("created_at") or t.get("last_tested_date")
                         # If we can't parse, include it anyway as a fallback
                         recent_targets.append(t)
                     if recent_targets:
                         current_session_mistakes = recent_targets
-                        logger.info("Post-call: Found %d recent mistakes from DB (telegram_id)", len(current_session_mistakes))
+                        logger.info(
+                            "Post-call: Found %d recent mistakes from DB (telegram_id)",
+                            len(current_session_mistakes),
+                        )
 
             english_level = session.state.get("user:english_level", "assessing")
             user_interests = session.state.get("user_interests", "")
@@ -224,7 +289,9 @@ def register_call_handlers(
                         "call me anytime and we'll have a proper catch-up! 😊"
                     )
                 await app.send_message(update.chat_id, fallback_msg)
-                logger.info("✅ Sent fallback post-call message to %s (no data)", update.chat_id)
+                logger.info(
+                    "✅ Sent fallback post-call message to %s (no data)", update.chat_id
+                )
                 return
 
             # --- BUILD DATA-GROUNDED SUMMARY ---
@@ -235,8 +302,8 @@ def register_call_handlers(
                         formatted_targets += (
                             f"Mistake #{i}:\n"
                             f"  Topic: {t.get('topic', 'General')}\n"
-                            f"  What they said: \"{t.get('user_mistake', '')}\"\n"
-                            f"  Correct form: \"{t.get('correct_form', '')}\"\n\n"
+                            f'  What they said: "{t.get("user_mistake", "")}"\n'
+                            f'  Correct form: "{t.get("correct_form", "")}"\n\n'
                         )
                     else:
                         formatted_targets += f"- {t}\n"
@@ -300,10 +367,13 @@ Learning Targets:
 {formatted_targets}
 """
             api_key = os.environ.get("GEMINI_API_KEY")
-            is_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "FALSE").strip().upper() == "TRUE"
+            is_vertex = (
+                os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "FALSE").strip().upper()
+                == "TRUE"
+            )
 
             # Using vertex AI suitable model
-            model_name = 'gemini-2.5-flash'
+            model_name = "gemini-2.5-flash"
 
             gemini_client = None
             if is_vertex:
@@ -311,7 +381,9 @@ Learning Targets:
                 # Passing `api_key` simultaneously causes `AttributeError: '_http_options'` during closing.
                 project = os.environ.get("GOOGLE_CLOUD_PROJECT")
                 location = os.environ.get("GOOGLE_CLOUD_LOCATION")
-                gemini_client = genai.Client(vertexai=True, project=project, location=location)
+                gemini_client = genai.Client(
+                    vertexai=True, project=project, location=location
+                )
             elif api_key:
                 # Standard Gemini API setup
                 gemini_client = genai.Client(api_key=api_key)
@@ -327,8 +399,9 @@ Learning Targets:
                 await app.send_message(update.chat_id, summary_text)
                 logger.info("✅ Sent dynamic post-call summary to %s", update.chat_id)
             else:
-                logger.warning("No Vertex/Gemini API config found. Skipping dynamic summary.")
+                logger.warning(
+                    "No Vertex/Gemini API config found. Skipping dynamic summary."
+                )
 
         except Exception as e:
             logger.error("Failed to generate/send post-call summary: %s", e)
-

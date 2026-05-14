@@ -12,6 +12,7 @@ from core.database import (
     AsyncSessionLocal,
     CorrectionPreference,
     LearningTarget,
+    SearchReport,
     User,
     UserMemory,
 )
@@ -56,25 +57,33 @@ class UserStore:
 
             user.phone_number = profile_data.get("phone_number", user.phone_number)
             user.user_name = profile_data.get("user_name", user.user_name)
-            
+
             age_val = profile_data.get("user_age", user.user_age)
             user.user_age = int(age_val) if age_val is not None else None
-            
+
             user.user_gender = profile_data.get("user_gender", user.user_gender)
             user.user_role = profile_data.get("user_role", user.user_role)
-            user.user_interests = profile_data.get("user_interests", user.user_interests)
-            
-            onboard_val = profile_data.get("onboarding_complete", user.onboarding_complete)
-            user.onboarding_complete = str(onboard_val).lower() if onboard_val is not None else "false"
-            
+            user.user_interests = profile_data.get(
+                "user_interests", user.user_interests
+            )
+
+            onboard_val = profile_data.get(
+                "onboarding_complete", user.onboarding_complete
+            )
+            user.onboarding_complete = (
+                str(onboard_val).lower() if onboard_val is not None else "false"
+            )
+
             user.english_level = profile_data.get("english_level", user.english_level)
-            
+
             call_count_val = profile_data.get("call_count", user.call_count)
             user.call_count = int(call_count_val) if call_count_val is not None else 0
-            
+
             user.last_seen = datetime.utcnow()
 
-            user.correction_preference = profile_data.get("correction_preference", user.correction_preference)
+            user.correction_preference = profile_data.get(
+                "correction_preference", user.correction_preference
+            )
             user.english_goal = profile_data.get("english_goal", user.english_goal)
 
             try:
@@ -88,7 +97,9 @@ class UserStore:
             return False
         return profile.get("onboarding_complete", "false") == "true"
 
-    async def get_relevant_memories(self, telegram_id: str, limit: int = 3) -> list[dict]:
+    async def get_relevant_memories(
+        self, telegram_id: str, limit: int = 3
+    ) -> list[dict]:
         """Fetch the top N most relevant memories for a user."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -123,7 +134,9 @@ class UserStore:
 
             return [mem.to_dict() for mem in top_memories]
 
-    async def get_due_learning_targets(self, telegram_id: str, limit: int = 2) -> list[dict]:
+    async def get_due_learning_targets(
+        self, telegram_id: str, limit: int = 2
+    ) -> list[dict]:
         """Fetch up to N due learning targets for review."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -136,7 +149,61 @@ class UserStore:
             targets = result.scalars().all()
             return [t.to_dict() for t in targets]
 
-    async def save_memory(self, telegram_id: str, fact: str, category: str, importance_score: int = 1) -> bool:
+    async def save_search_report(
+        self,
+        telegram_id: str,
+        report_name: str,
+        plan_content: str = "",
+        status: str = "pending_approval",
+    ) -> int:
+        """Create a new search report entry in the database."""
+        async with AsyncSessionLocal() as db_session:
+            report = SearchReport(
+                telegram_id=telegram_id,
+                report_name=report_name,
+                plan_content=plan_content,
+                status=status,
+            )
+            db_session.add(report)
+            await db_session.commit()
+            await db_session.refresh(report)
+            return report.id
+
+    async def update_search_report(
+        self, report_id: int, final_report_content: str, status: str
+    ) -> bool:
+        """Update an existing search report with the final content and status."""
+        async with AsyncSessionLocal() as db_session:
+            result = await db_session.execute(
+                select(SearchReport).where(SearchReport.id == report_id)
+            )
+            report = result.scalars().first()
+            if not report:
+                return False
+
+            report.final_report_content = final_report_content
+            report.status = status
+            await db_session.commit()
+            return True
+
+    async def get_pending_search_report(self, telegram_id: str) -> dict | None:
+        """Get the most recent pending search report for a user."""
+        async with AsyncSessionLocal() as db_session:
+            result = await db_session.execute(
+                select(SearchReport)
+                .where(SearchReport.telegram_id == telegram_id)
+                .where(SearchReport.status == "pending_approval")
+                .order_by(SearchReport.id.desc())
+                .limit(1)
+            )
+            report = result.scalars().first()
+            if report:
+                return report.to_dict()
+            return None
+
+    async def save_memory(
+        self, telegram_id: str, fact: str, category: str, importance_score: int = 1
+    ) -> bool:
         """Extract and save an atomic fact about the user."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -151,7 +218,7 @@ class UserStore:
                 telegram_id=telegram_id,
                 memory_fact=fact,
                 category=category,
-                importance_score=importance_score
+                importance_score=importance_score,
             )
             db_session.add(memory)
             await db_session.commit()
@@ -159,7 +226,7 @@ class UserStore:
 
     async def update_learning_progress(self, target_id: int, success: bool) -> None:
         """Update mastery level and next test date based on SRS logic."""
-        intervals = {0: 1, 1: 3, 2: 7, 3: 30} # days
+        intervals = {0: 1, 1: 3, 2: 7, 3: 30}  # days
 
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -176,16 +243,25 @@ class UserStore:
             if success:
                 new_level = min(current_level + 1, 3)
             else:
-                new_level = 0 # Reset to 0 as requested
+                new_level = 0  # Reset to 0 as requested
 
             target.mastery_level = new_level
             target.times_tested += 1
             target.last_tested_date = datetime.utcnow()
-            target.next_test_due = datetime.utcnow() + timedelta(days=intervals[new_level])
+            target.next_test_due = datetime.utcnow() + timedelta(
+                days=intervals[new_level]
+            )
 
             await db_session.commit()
 
-    async def log_learning_target(self, telegram_id: str, topic: str, user_mistake: str, correct_form: str, session_id: str = None) -> bool:
+    async def log_learning_target(
+        self,
+        telegram_id: str,
+        topic: str,
+        user_mistake: str,
+        correct_form: str,
+        session_id: str | None = None,
+    ) -> bool:
         """Log a new learning target for the user."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -202,20 +278,22 @@ class UserStore:
                 .where(LearningTarget.user_mistake == user_mistake)
             )
             if existing.scalars().first():
-                return True # Already logged
+                return True  # Already logged
 
             target = LearningTarget(
                 telegram_id=telegram_id,
                 session_id=session_id,
                 topic=topic,
                 user_mistake=user_mistake,
-                correct_form=correct_form
+                correct_form=correct_form,
             )
             db_session.add(target)
             await db_session.commit()
             return True
 
-    async def update_correction_preference(self, telegram_id: str, preference: str) -> bool:
+    async def update_correction_preference(
+        self, telegram_id: str, preference: str
+    ) -> bool:
         """Update the user's correction preference."""
         try:
             valid_preference = CorrectionPreference(preference).value
@@ -235,7 +313,9 @@ class UserStore:
             await db_session.commit()
             return True
 
-    async def get_all_learning_targets(self, telegram_id: str, limit: int = 20) -> list[dict]:
+    async def get_all_learning_targets(
+        self, telegram_id: str, limit: int = 20
+    ) -> list[dict]:
         """Fetch all learning targets for a user, ordered by most recent first."""
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
@@ -251,7 +331,7 @@ class UserStore:
         """Fetch all learning targets logged during a specific session."""
         if not session_id:
             return []
-        
+
         async with AsyncSessionLocal() as db_session:
             result = await db_session.execute(
                 select(LearningTarget)

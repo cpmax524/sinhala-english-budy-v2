@@ -37,6 +37,9 @@ import asyncio
 from jinja2 import Template
 from app.prompts import SYSTEM_INSTRUCTION
 from core.user_store import UserStore
+from app.deep_search import plan_generator
+from google.adk import Runner
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
 
 # ---------------------------------------------------------------------------
 # Jinja2 Instruction Provider
@@ -60,16 +63,25 @@ def render_instruction(context: ReadonlyContext) -> str:
         "user_role": state.get("user_role", ""),
         "user_interests": state.get("user_interests", ""),
         "english_level": state.get("user:english_level", "assessing"),
-        "user_correction_preference": state.get("user:correction_preference", "instant_pause"),
+        "user_correction_preference": state.get(
+            "user:correction_preference", "instant_pause"
+        ),
         "onboarding_complete": state.get("onboarding_complete", "false"),
         "is_returning_user": state.get("is_returning_user", "false"),
         "call_count": state.get("call_count", 0),
         "missing_onboarding_fields": state.get("missing_onboarding_fields", []),
-        "recent_memories": state.get("recent_memories", "No memories yet — this might be a new friend."),
-        "due_learning_targets": state.get("due_learning_targets", "No targets due for review."),
-        "learning_targets": state.get("learning_targets", "No learning targets logged yet."),
+        "recent_memories": state.get(
+            "recent_memories", "No memories yet — this might be a new friend."
+        ),
+        "due_learning_targets": state.get(
+            "due_learning_targets", "No targets due for review."
+        ),
+        "learning_targets": state.get(
+            "learning_targets", "No learning targets logged yet."
+        ),
     }
     return _instruction_template.render(**template_vars)
+
 
 # Removed _session_mistakes dict (now using DB session_id queries directly)
 
@@ -85,9 +97,11 @@ if "GOOGLE_GENAI_USE_VERTEXAI" not in os.environ:
 # Model selection: Vertex AI and Gemini Developer API use different model IDs
 # for the native-audio Live API.
 # ---------------------------------------------------------------------------
-_use_vertex = os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "FALSE").strip().upper() == "TRUE"
+_use_vertex = (
+    os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "FALSE").strip().upper() == "TRUE"
+)
 LIVE_MODEL = (
-    "gemini-live-2.5-flash-native-audio"             # Vertex AI GA model
+    "gemini-live-2.5-flash-native-audio"  # Vertex AI GA model
     if _use_vertex
     else "gemini-2.5-flash-native-audio-preview-12-2025"  # Gemini Developer API
 )
@@ -126,9 +140,22 @@ async def update_user_profile(
     # --- Validation: Reject suspicious/fabricated data ---
     # Common hallucinated placeholder names the LLM might invent
     SUSPICIOUS_NAMES = {
-        "unknown", "user", "friend", "buddy", "student", "learner",
-        "caller", "person", "guest", "anonymous", "n/a", "none",
-        "talkmate", "sinhala", "english", "sri lankan",
+        "unknown",
+        "user",
+        "friend",
+        "buddy",
+        "student",
+        "learner",
+        "caller",
+        "person",
+        "guest",
+        "anonymous",
+        "n/a",
+        "none",
+        "talkmate",
+        "sinhala",
+        "english",
+        "sri lankan",
     }
 
     if name and name != "unknown":
@@ -150,7 +177,9 @@ async def update_user_profile(
         if gender.lower().strip() in ("male", "female", "other"):
             c["user_gender"] = gender.lower().strip()
         else:
-            return f"Error: Gender must be 'male', 'female', or 'other'. Got '{gender}'."
+            return (
+                f"Error: Gender must be 'male', 'female', or 'other'. Got '{gender}'."
+            )
 
     if role and role.lower().strip() not in ("unknown", "n/a", "none", ""):
         c["user_role"] = role.strip()
@@ -210,7 +239,7 @@ async def extract_and_save_memory(
         user_id = getattr(tool_context.session, "user_id", None)
     if not user_id:
         user_id = tool_context.state.get("user:telegram_id", "")
-        
+
     if not user_id:
         return "Error: No user ID in state."
 
@@ -265,7 +294,7 @@ async def change_correction_style(
         user_id = getattr(tool_context.session, "user_id", None)
     if not user_id:
         user_id = tool_context.state.get("user:telegram_id", "")
-        
+
     if not user_id:
         return "Error: No user ID in state."
 
@@ -299,10 +328,10 @@ async def log_learning_target(
         user_id = getattr(tool_context.session, "user_id", None)
     if not user_id:
         user_id = tool_context.state.get("user:telegram_id", "")
-        
+
     if not user_id:
         return "Error: No user ID in state."
-        
+
     if "current_session_mistakes" not in tool_context.state:
         tool_context.state["current_session_mistakes"] = []
 
@@ -316,11 +345,11 @@ async def log_learning_target(
 
     user_store = UserStore()
     saved = await user_store.log_learning_target(
-        telegram_id=user_id, 
-        topic=topic, 
-        user_mistake=user_mistake, 
+        telegram_id=user_id,
+        topic=topic,
+        user_mistake=user_mistake,
         correct_form=correct_form,
-        session_id=tool_context.session.id if tool_context.session else None
+        session_id=tool_context.session.id if tool_context.session else None,
     )
 
     if not saved:
@@ -328,6 +357,110 @@ async def log_learning_target(
 
     return f"Successfully logged learning target for '{topic}'."
 
+
+async def generate_and_send_plan_task(telegram_id: str, topic: str):
+    """Background task to generate and send a research plan."""
+    import logging
+    from pyrogram import Client
+    import os
+
+    logger = logging.getLogger(__name__)
+
+    # Run the plan_generator agent
+    # We use a temporary InMemorySessionService for the standalone agent run
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=plan_generator, session_service=session_service, app_name="talkmate"
+    )
+
+    session = await session_service.create_session("talkmate", telegram_id)
+
+    logger.info(
+        f"Starting deep search plan generation for user {telegram_id} on topic '{topic}'"
+    )
+
+    try:
+        response = await runner.run(
+            user_id=telegram_id,
+            session_id=session.id,
+            messages=[
+                {
+                    "role": "user",
+                    "parts": [{"text": f"Generate a research plan for: {topic}"}],
+                }
+            ],
+        )
+
+        # Extract the plan from the response or state
+        updated_session = await session_service.get_session(
+            "talkmate", telegram_id, session.id
+        )
+        plan_content = updated_session.state.get("research_plan", "")
+
+        if (
+            not plan_content
+            and response
+            and response.content
+            and response.content.parts
+        ):
+            plan_content = response.content.parts[0].text
+
+        if not plan_content:
+            plan_content = "Failed to generate plan."
+
+        # Save to DB
+        user_store = UserStore()
+        report_name = f"Research on {topic}"
+        report_id = await user_store.save_search_report(
+            telegram_id=telegram_id,
+            report_name=report_name,
+            plan_content=plan_content,
+            status="pending_approval",
+        )
+
+        # Send via Telegram
+        api_id = os.environ.get("TELEGRAM_API_ID")
+        api_hash = os.environ.get("TELEGRAM_API_HASH")
+        session_name = os.environ.get("TELEGRAM_SESSION_NAME", "tutor_userbot")
+
+        if api_id and api_hash:
+            async with Client(session_name, api_id=api_id, api_hash=api_hash) as app:
+                message = (
+                    f"🔍 **Deep Search Plan Generated**\n\n"
+                    f"**Topic:** {topic}\n\n"
+                    f"{plan_content}\n\n"
+                    f"Reply with 'Approved' or 'Looks good' to execute this research plan!"
+                )
+                await app.send_message(chat_id=int(telegram_id), text=message)
+                logger.info(f"Successfully sent research plan to user {telegram_id}")
+    except Exception as e:
+        logger.error(f"Failed to generate/send research plan: {e}")
+
+
+async def delegate_deep_search(
+    topic: str,
+    tool_context: ToolContext,
+) -> str:
+    """
+    Delegates a deep research task to the background Deep Search Agents.
+    Call this when the user asks you to deeply research a topic, write a detailed report, or find comprehensive information about something.
+
+    Args:
+        topic: The topic the user wants researched.
+    """
+    user_id = getattr(tool_context, "user_id", None)
+    if not user_id and getattr(tool_context, "session", None):
+        user_id = getattr(tool_context.session, "user_id", None)
+    if not user_id:
+        user_id = tool_context.state.get("user:telegram_id", "")
+
+    if not user_id:
+        return "Error: No user ID in state. Cannot perform deep search."
+
+    # Launch background task to generate the plan
+    asyncio.create_task(generate_and_send_plan_task(user_id, topic))
+
+    return "Deep search task has been delegated to the background. You MUST now inform the user that their search plan is being generated and will be sent via text message, and then organically resume the previous conversation."
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +525,7 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         user_id = getattr(callback_context.session, "user_id", None)
     if not user_id:
         user_id = state.get("user:telegram_id", "")
-        
+
     if user_id:
         user_store = UserStore()
         profile = await user_store.load_profile(user_id)
@@ -400,15 +533,22 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
         if profile:
             # Only restore profile fields if state appears stale
             # (e.g., after ADK state deserialization issues)
-            if state.get("user_name") == "unknown" and profile.get("user_name", "unknown") != "unknown":
+            if (
+                state.get("user_name") == "unknown"
+                and profile.get("user_name", "unknown") != "unknown"
+            ):
                 state["user_name"] = profile.get("user_name", "unknown")
                 state["user_age"] = profile.get("user_age", 0)
                 state["user_gender"] = profile.get("user_gender", "unknown")
                 state["user_role"] = profile.get("user_role", "")
                 state["user_interests"] = profile.get("user_interests", "")
-                state["onboarding_complete"] = profile.get("onboarding_complete", "false")
+                state["onboarding_complete"] = profile.get(
+                    "onboarding_complete", "false"
+                )
                 state["user:english_level"] = profile.get("english_level", "assessing")
-                state["user:correction_preference"] = profile.get("correction_preference", "instant_pause")
+                state["user:correction_preference"] = profile.get(
+                    "correction_preference", "instant_pause"
+                )
                 state["user:english_goal"] = profile.get("english_goal", "")
                 state["call_count"] = profile.get("call_count", 0)
 
@@ -443,7 +583,7 @@ async def initialize_tutor_state(callback_context: CallbackContext) -> None:
                 mastery = t.get("mastery_level", 0)
                 formatted_lines.append(
                     f"- Target #{target_id} ({topic}, mastery {mastery}/3): "
-                    f'"{ mistake}" → "{correct}"'
+                    f'"{mistake}" → "{correct}"'
                 )
             state["due_learning_targets"] = "\n".join(formatted_lines)
 
@@ -486,11 +626,9 @@ custom_llm = Gemini(
     model=LIVE_MODEL,
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                voice_name="Leda"
-            )
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Leda")
         )
-    )
+    ),
 )
 
 root_agent = Agent(
@@ -508,7 +646,8 @@ root_agent = Agent(
         log_learning_target,
         extract_and_save_memory,
         update_learning_progress,
-        change_correction_style
+        change_correction_style,
+        delegate_deep_search,
     ],
     before_agent_callback=initialize_tutor_state,
 )
