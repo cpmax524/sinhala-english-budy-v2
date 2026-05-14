@@ -152,16 +152,16 @@ class UserStore:
     async def save_search_report(
         self,
         telegram_id: str,
-        report_name: str,
-        plan_content: str = "",
+        report_topic: str,
+        search_plan_content: str = "",
         status: str = "pending_approval",
     ) -> int:
         """Create a new search report entry in the database."""
         async with AsyncSessionLocal() as db_session:
             report = SearchReport(
                 telegram_id=telegram_id,
-                report_name=report_name,
-                plan_content=plan_content,
+                report_topic=report_topic,
+                search_plan_content=search_plan_content,
                 status=status,
             )
             db_session.add(report)
@@ -170,7 +170,7 @@ class UserStore:
             return report.id
 
     async def update_search_report(
-        self, report_id: int, final_report_content: str, status: str
+        self, report_id: int, final_report_content: str, status: str, search_plan_content: str | None = None
     ) -> bool:
         """Update an existing search report with the final content and status."""
         async with AsyncSessionLocal() as db_session:
@@ -183,6 +183,8 @@ class UserStore:
 
             report.final_report_content = final_report_content
             report.status = status
+            if search_plan_content is not None:
+                report.search_plan_content = search_plan_content
             await db_session.commit()
             return True
 

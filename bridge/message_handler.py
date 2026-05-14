@@ -109,7 +109,7 @@ def register_message_handlers(app: Client):
                     "do it",
                     "start",
                 ]
-            ):
+            ) and len(text.split()) < 5:
                 await message.reply_text(
                     "✅ Plan approved! I'm starting the deep search now. I'll send you the final report here when it's ready. You can continue your voice call normally."
                 )
@@ -120,25 +120,98 @@ def register_message_handlers(app: Client):
                 )
 
                 # Launch execution in background
-                asyncio.create_task(
+                _task = asyncio.create_task(
                     execute_research_pipeline_task(
                         client,
                         user_id,
                         pending_report["id"],
-                        pending_report["plan_content"],
+                        pending_report["search_plan_content"],
                     )
                 )
             # Check if user wants to cancel
-            elif any(phrase in text for phrase in ["cancel", "stop", "no", "abort"]):
+            elif any(phrase in text for phrase in ["cancel", "stop", "abort"]) and len(text.split()) < 5:
                 await user_store.update_search_report(
                     pending_report["id"], "", "cancelled"
                 )
                 await message.reply_text("❌ Deep search cancelled.")
             else:
-                # Let them know they have a pending plan
+                # Treat any other text as a modification request
                 await message.reply_text(
-                    "You have a pending deep search plan. Please reply with 'Approved' to start it, or 'Cancel' to abort."
+                    "🔄 Got your feedback! Regenerating the research plan based on your request..."
                 )
+
+                # Update status to regenerating
+                await user_store.update_search_report(
+                    pending_report["id"], "", "regenerating"
+                )
+
+                # We run the modification via plan_generator
+                async def regenerate_plan_task():
+                    try:
+                        session_service = InMemorySessionService()
+                        from google.adk import Runner
+
+                        from app.deep_search import plan_generator
+
+                        runner = Runner(
+                            agent=plan_generator,
+                            session_service=session_service,
+                            app_name="talkmate",
+                        )
+                        session = await session_service.create_session("talkmate", user_id)
+
+                        # Inject current plan into state
+                        session.state["research_plan"] = pending_report["search_plan_content"]
+                        await session_service.update_session_state(
+                            "talkmate", user_id, session.id, session.state
+                        )
+
+                        response = await runner.run(
+                            user_id=user_id,
+                            session_id=session.id,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "parts": [{"text": f"Modify the existing plan based on this feedback: {message.text}"}],
+                                }
+                            ],
+                        )
+
+                        updated_session = await session_service.get_session(
+                            "talkmate", user_id, session.id
+                        )
+                        new_plan_content = updated_session.state.get("research_plan", "")
+
+                        if not new_plan_content and response and response.content and response.content.parts:
+                            new_plan_content = response.content.parts[0].text
+
+                        if not new_plan_content:
+                            raise Exception("Failed to get a new plan content")
+
+                        # Save the updated report
+                        await user_store.update_search_report(
+                            report_id=pending_report["id"],
+                            final_report_content="",
+                            status="pending_approval",
+                            search_plan_content=new_plan_content,
+                        )
+
+                        await client.send_message(
+                            chat_id=int(user_id),
+                            text=f"🔍 **Updated Deep Search Plan**\n\n**Topic:** {pending_report['report_topic']}\n\n{new_plan_content}\n\nReply with 'Approved' or 'Looks good' to execute, or provide more feedback.",
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to regenerate plan: {e}")
+                        await client.send_message(
+                            chat_id=int(user_id),
+                            text="❌ Sorry, an error occurred while updating the plan. Please try again.",
+                        )
+                        # Revert the old report to pending so they aren't stuck
+                        await user_store.update_search_report(
+                            pending_report["id"], "", "pending_approval"
+                        )
+
+                _regen_task = asyncio.create_task(regenerate_plan_task())
         else:
             # No pending report, could just be a normal text message
             # For now we'll just ignore it or send a generic reply

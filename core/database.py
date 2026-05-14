@@ -152,9 +152,9 @@ class SearchReport(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_id: Mapped[str] = mapped_column(String, ForeignKey("users.telegram_id"))
-    report_name: Mapped[str] = mapped_column(String, default="")
+    report_topic: Mapped[str] = mapped_column(String, default="")
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    plan_content: Mapped[str] = mapped_column(Text, default="")
+    search_plan_content: Mapped[str] = mapped_column(Text, default="")
     final_report_content: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String, default="pending_approval")
 
@@ -164,9 +164,9 @@ class SearchReport(Base):
         return {
             "id": self.id,
             "telegram_id": self.telegram_id,
-            "report_name": self.report_name,
+            "report_topic": self.report_topic,
             "timestamp": self.timestamp.isoformat(),
-            "plan_content": self.plan_content,
+            "search_plan_content": self.search_plan_content,
             "final_report_content": self.final_report_content,
             "status": self.status,
         }

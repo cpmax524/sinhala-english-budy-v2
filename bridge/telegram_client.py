@@ -7,7 +7,6 @@ from pytgcalls import PyTgCalls
 
 from core.config import AppConfig
 
-
 _global_client: Client | None = None
 
 def get_global_client() -> Client | None:
