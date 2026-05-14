@@ -1,0 +1,3389 @@
+Directory structure:
+└── deep-search/
+    ├── README.md
+    ├── Makefile
+    ├── pyproject.toml
+    ├── .env.example
+    ├── app/
+    │   ├── __init__.py
+    │   ├── agent.py
+    │   └── config.py
+    └── frontend/
+        ├── components.json
+        ├── eslint.config.js
+        ├── index.html
+        ├── package.json
+        ├── tsconfig.json
+        ├── tsconfig.node.json
+        ├── vite.config.ts
+        └── src/
+            ├── App.tsx
+            ├── global.css
+            ├── main.tsx
+            ├── utils.ts
+            ├── vite-env.d.ts
+            └── components/
+                ├── ActivityTimeline.tsx
+                ├── ChatMessagesView.tsx
+                ├── InputForm.tsx
+                ├── WelcomeScreen.tsx
+                └── ui/
+                    ├── badge.tsx
+                    ├── button.tsx
+                    ├── card.tsx
+                    ├── input.tsx
+                    ├── scroll-area.tsx
+                    ├── select.tsx
+                    ├── tabs.tsx
+                    └── textarea.tsx
+
+================================================
+FILE: python/agents/deep-search/README.md
+================================================
+# Deep Search Agent Development Kit (ADK) Quickstart
+
+> **Note:** This agent was previously named `gemini-fullstack` and has been renamed to `deep-search`. If you're looking for the old `gemini-fullstack` agent, you're in the right place! All functionality remains the same.
+
+The **Deep Search Agent Development Kit (ADK) Quickstart** is a production-ready blueprint for building a sophisticated, fullstack research agent with Gemini. It's built to demonstrate how the ADK helps structure complex agentic workflows, build modular agents, and incorporate critical Human-in-the-Loop (HITL) steps.
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="2">Key Features</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>🏗️</td>
+      <td><strong>Fullstack & Production-Ready:</strong> A complete React frontend and ADK-powered FastAPI backend, with deployment options for <a href="https://cloud.google.com/run">Google Cloud Run</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime">Agent Runtime</a>.</td>
+    </tr>
+    <tr>
+      <td>🧠</td>
+      <td><strong>Advanced Agentic Workflow:</strong> The agent uses Gemini to <strong>strategize</strong> a multi-step plan, <strong>reflect</strong> on findings to identify gaps, and <strong>synthesize</strong> a final, comprehensive report.</td>
+    </tr>
+    <tr>
+      <td>🔄</td>
+      <td><strong>Iterative & Human-in-the-Loop Research:</strong> Involves the user for plan approval, then autonomously loops through searching (via Gemini function calling) and refining its results until it has gathered sufficient information.</td>
+    </tr>
+  </tbody>
+</table>
+
+Here is the agent in action:
+
+<img src="https://github.com/GoogleCloudPlatform/agent-starter-pack/blob/main/docs/images/adk_gemini_fullstack.gif?raw=true" width="80%" alt="Gemini Fullstack ADK Preview">
+
+This project adapts concepts from the [Gemini FullStack LangGraph Quickstart](https://github.com/google-gemini/gemini-fullstack-langgraph-quickstart) for the frontend app.
+
+## Setup and Installation
+
+### Prerequisites
+
+-   Python 3.10+
+-   [Node.js](https://nodejs.org/)
+-   [uv](https://github.com/astral-sh/uv) for dependency management
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+-   [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) and a **Google Cloud Project** with the **Vertex AI API** enabled
+
+## Google Agents CLI (recommended)
+
+Use the [Google Agents CLI](https://github.com/google/agents-cli) to scaffold a production-ready project and choose your deployment target ([Agent Runtime](https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime) or [Cloud Run](https://cloud.google.com/run)), with CI/CD and other production features.
+
+**Install the CLI** (one-time):
+
+```bash
+uvx google-agents-cli setup
+```
+
+**Create the project from this sample** (replace `my-deep-search-agent` with your project name):
+
+```bash
+agents-cli create my-deep-search-agent -a adk@deep-search
+```
+
+The Google Agents CLI will prompt you to select deployment options and set up your Google Cloud project.
+
+From your newly created project directory (e.g. `my-deep-search-agent`), install dependencies and start the servers:
+
+```bash
+cd my-deep-search-agent && make install && make dev
+```
+
+Your agent is now running at `http://localhost:5173`.
+
+---
+
+<details>
+<summary>Alternative: Local development (run from this sample repo)</summary>
+
+### Google AI Studio
+
+You'll need a **[Google AI Studio API Key](https://aistudio.google.com/app/apikey)**.
+
+#### Step 1: Clone Repository
+Clone the repository and `cd` into the project directory.
+
+```bash
+git clone https://github.com/google/adk-samples.git
+cd adk-samples/python/agents/deep-search
+```
+
+#### Step 2: Set Environment Variables
+Create a `.env` file in the `app` folder with your API key (see `.env.example` for reference):
+
+```bash
+echo "GOOGLE_API_KEY=YOUR_AI_STUDIO_API_KEY" >> app/.env
+```
+
+#### Step 3: Install & Run
+From the `deep-search` directory, install dependencies and start the servers.
+
+```bash
+make install && make dev
+```
+Your agent is now running at `http://localhost:5173`.
+
+### Using Vertex AI with the cloned repository
+
+If you've already cloned the repository and want to use Vertex AI instead of AI Studio, create a `.env` file in the `app` folder with:
+
+```bash
+echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE" >> app/.env
+echo "GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID" >> app/.env
+echo "GOOGLE_CLOUD_LOCATION=us-central1" >> app/.env
+```
+
+Make sure you're authenticated with Google Cloud:
+```bash
+gcloud auth application-default login
+```
+
+Then run `make install && make dev` to start the agent.
+
+</details>
+
+## Cloud Deployment
+
+> **Note:** Cloud deployment applies only to projects created with **google-agents-cli**.
+
+**Prerequisites:**
+```bash
+gcloud components update
+gcloud config set project YOUR_PROJECT_ID
+```
+
+#### Option 1: Deploy with ADK Web UI (Default)
+
+For a quick deployment using the built-in [adk-web](https://github.com/google/adk-web) interface:
+
+```bash
+make deploy IAP=true
+```
+
+#### Option 2: Deploy with Custom UI (React Frontend)
+
+This agent includes a custom React frontend. To deploy it:
+
+1. **Configure the Dockerfile** - See the [Deploy UI Guide](https://github.com/google/agents-cli) for the required Dockerfile changes.
+
+2. **Deploy with the frontend port:**
+```bash
+make deploy IAP=true PORT=5173
+```
+
+#### After Deployment
+
+Once deployed, grant users access to your IAP-protected service by following the [Manage User Access](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run#manage_user_or_group_access) documentation.
+
+For production deployments with CI/CD, see the [Google Agents CLI Development Guide](https://github.com/google/agents-cli).
+
+## Agent Details
+
+| Attribute | Description |
+| :--- | :--- |
+| **Interaction Type** | Workflow |
+| **Complexity** | Advanced |
+| **Agent Type** | Multi Agent |
+| **Components** | Multi-agent, Function calling, Web search, React frontend, Human-in-the-Loop |
+| **Vertical** | Horizontal |
+
+## How the Agent Thinks: A Two-Phase Workflow
+
+The backend agent, defined in `app/agent.py`, follows a sophisticated workflow to move from a simple topic to a fully-researched report.
+
+The following diagram illustrates the agent's architecture and workflow:
+
+![ADK Gemini Fullstack Architecture](https://github.com/GoogleCloudPlatform/agent-starter-pack/blob/main/docs/images/adk_gemini_fullstack_architecture.png?raw=true)
+
+This process is broken into two main phases:
+
+### Phase 1: Plan & Refine (Human-in-the-Loop)
+
+This is the collaborative brainstorming phase.
+
+1.  **You provide a research topic.**
+2.  The agent generates a high-level research plan with several key goals (e.g., "Analyze the market impact," "Identify key competitors").
+3.  The plan is presented to **you**. You can approve it, or chat with the agent to add, remove, or change goals until you're satisfied. Nothing happens without your explicit approval.
+
+The plan will contains following tags as a signal to downstream agents,
+  - Research Plan Tags
+
+    - [RESEARCH]: Guides info gathering via search.
+    - [DELIVERABLE]: Guides creation of final outputs (e.g., tables, reports).
+  
+  - Plan Refinement Tags
+
+    - [MODIFIED]: Goal was updated.
+    - [NEW]: New goal added per user.
+    - [IMPLIED]: Deliverable proactively added by AI.
+
+### Phase 2: Execute Autonomous Research
+
+Once you approve the plan, the agent's `research_pipeline` takes over and works autonomously.
+
+1.  **Outlining:** It first converts the approved plan into a structured report outline (like a table of contents).
+2.  **Iterative Research & Critique Loop:** For each section of the outline, it repeats a cycle:
+    *   **Search:** It performs web searches to gather information.
+    *   **Critique:** A "critic" model evaluates the findings for gaps or weaknesses.
+    *   **Refine:** If the critique finds weaknesses, the agent generates more specific follow-up questions and searches again. This loop continues until the research meets a high-quality bar.
+3.  **Compose Final Report:** After the research loop is complete, a final agent takes all the verified findings and writes a polished report, automatically adding inline citations that link back to the original sources.
+
+You can edit key parameters (Gemini models, research loop iterations) in the `ResearchConfiguration` dataclass within `app/config.py`.
+
+## Customization
+
+You can modify and extend this agent's behavior by editing the backend code.
+
+*   **Modifying Agent Logic:** The core logic for all sub-agents (planner, researcher, critic, composer) is defined in `app/agent.py`. You can change the prompts, tools, or reasoning steps by modifying the agent definitions here.
+*   **Adjusting Research Parameters:** Key parameters, such as the Gemini models used or the number of research loop iterations, can be adjusted in the `ResearchConfiguration` dataclass within `app/config.py`.
+*   **Syncing with Frontend:** The frontend UI integrates with the backend through specific agent names that process outputs differently (e.g., research findings vs. final report), update the activity timeline with appropriate titles/icons, and track research metrics like website counts. 
+    Important agent names include:
+    * `section_researcher` & `enhanced_search_executor` - track websites consulted
+    * `report_composer_with_citations` - processes final report
+    * `interactive_planner_agent` - updates AI messages during planning
+    * `plan_generator` and `section_planner` - used for timeline labels
+    
+    If you rename agents in `app/agent.py`, you must update their names in the frontend code (`/ui`) to maintain functionality.
+
+
+### Example Interaction
+
+> **User:** A report on the last Google I/O
+>
+> **Agent:** Here's a research plan for a report on the last Google I/O:
+>
+> *   Analyze the key announcements and product updates made at Google I/O 2025.
+> *   Identify the central themes and strategic directions emphasized by Google during the event, particularly concerning AI, Android, and other emerging technologies like Android XR.
+> *   Investigate the reception and industry impact of the major product unveilings and feature enhancements.
+> *   Examine any significant shifts or continuities in Google's developer strategy as presented at the conference.
+> *   Assess the implications of the announced technologies and initiatives for developers, consumers, and the broader tech landscape.
+>
+> Does this plan look good, or would you like to refine it further? Once approved, I can initiate the research.
+>
+> **User:** Looks good!
+> *(The agent proceeds to autonomously execute the research, showing its progress on the timeline.)*
+>
+> **Agent:**
+> 
+> Google I/O 2025: Key Announcements and Highlights
+> ....
+
+## Troubleshooting
+
+If you encounter issues while setting up or running this agent, here are some resources to help you troubleshoot:
+- [ADK Documentation](https://google.github.io/adk-docs/): Comprehensive documentation for the Agent Development Kit
+- [Vertex AI Authentication Guide](https://cloud.google.com/vertex-ai/docs/authentication): Detailed instructions for setting up authentication
+- [Google Agents CLI Troubleshooting](https://github.com/google/agents-cli): Common issues
+
+
+## Technologies Used
+
+### Backend
+*   [**Agent Development Kit (ADK)**](https://github.com/google/adk-python): The core framework for building the stateful, multi-turn agent.
+*   [**FastAPI**](https://fastapi.tiangolo.com/): High-performance web framework for the backend API.
+*   [**Google Gemini**](https://cloud.google.com/vertex-ai/generative-ai/docs): Used for planning, reasoning, search query generation, and final synthesis.
+
+### Frontend
+*   [**React**](https://reactjs.org/) (with [Vite](https://vitejs.dev/)): For building the interactive user interface.
+*   [**Tailwind CSS**](https://tailwindcss.com/): For utility-first styling.
+*   [**Shadcn UI**](https://ui.shadcn.com/): A set of beautifully designed, accessible components.
+
+## Disclaimer
+
+This agent sample is provided for illustrative purposes only. It serves as a basic example of an agent and a foundational starting point for individuals or teams to develop their own agents.
+
+Users are solely responsible for any further development, testing, security hardening, and deployment of agents based on this sample. We recommend thorough review, testing, and the implementation of appropriate safeguards before using any derived agent in a live or critical system.
+
+
+
+================================================
+FILE: python/agents/deep-search/Makefile
+================================================
+install:
+	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.6.12/install.sh | sh; source $HOME/.local/bin/env; }
+	uv sync && npm --prefix frontend install
+
+dev:
+	make dev-backend & make dev-frontend
+
+dev-backend:
+	uv run adk api_server app --allow_origins="*"
+
+dev-frontend:
+	npm --prefix frontend run dev
+
+playground:
+	uv run adk web --port 8501
+
+lint:
+	uv sync --dev --extra lint
+	uv run codespell
+	uv run ruff check . --diff
+	uv run ruff format . --check --diff
+	uv run mypy .
+
+
+
+================================================
+FILE: python/agents/deep-search/pyproject.toml
+================================================
+[project]
+name = "deep-search"
+version = "0.1.0"
+description = "A production-ready fullstack research agent that uses Gemini to strategize, research, and synthesize comprehensive reports with human-in-the-loop collaboration"
+authors = [
+    {name = "Amit Dutta", email = "amitdutta@google.com"},
+    {name = "Deepak Moonat", email = "dmoonat@google.com"},
+    {name = "Elia Secchi", email = "eliasecchi@google.com"},
+    {name = "Erwin Huizenga", email = "erwinh@google.com"},
+    {name = "Lavi Nigam", email = "lavinigam@google.com"},
+]
+license = {text = "Apache License 2.0"}
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+
+dependencies = [
+    "google-adk>=1.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "nest-asyncio>=1.6.0",
+    "agent-starter-pack>=0.14.1",
+    "jupyter>=1.1.1",
+]
+
+[project.optional-dependencies]
+lint = [
+    "ruff>=0.4.6",
+    "mypy>=1.19.0",
+    "codespell>=2.4.1",
+    "types-pyyaml>=6.0.12.20240917",
+    "types-requests>=2.32.4.20250913",
+]
+
+[tool.ruff]
+# Point back to the Master template in the root
+extend = "../../../pyproject.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+
+[tool.ruff.lint.isort]
+# Treat both app and frontend as internal packages
+known-first-party = ["app", "frontend", "deep_search"]
+
+[tool.mypy]
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_subclassing_any = true
+warn_incomplete_stub = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+follow_imports = "silent"
+ignore_missing_imports = true
+explicit_package_bases = true
+disable_error_code = ["misc", "no-untyped-call", "no-any-return"]
+exclude = [".venv"]
+
+[tool.codespell]
+skip = "uv.lock,.venv,./frontend"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "frontend"]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.agent-starter-pack]
+base_template = "adk_base"
+description = "A production-ready fullstack research agent that uses Gemini to strategize, research, and synthesize comprehensive reports with human-in-the-loop collaboration"
+example_question = "A report on the latest Google I/O event"
+
+[tool.agent-starter-pack.settings]
+deployment_targets = ["agent_engine", "cloud_run"]
+interactive_command = "dev"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+================================================
+FILE: python/agents/deep-search/.env.example
+================================================
+# ============================================
+# AI Studio (Default) - Recommended for quick start
+# ============================================
+# Get your API key from https://aistudio.google.com/app/apikey
+GOOGLE_API_KEY=YOUR_AI_STUDIO_API_KEY_HERE
+
+# ============================================
+# Vertex AI (Alternative) - For Google Cloud users
+# ============================================
+# Uncomment to use Vertex AI instead of AI Studio.
+# Project and location are auto-detected from your default credentials.
+# Run: gcloud auth application-default login
+
+# GOOGLE_GENAI_USE_VERTEXAI=TRUE
+
+
+
+================================================
+FILE: python/agents/deep-search/app/__init__.py
+================================================
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Deep Search Agent: strategize, research, and synthesize comprehensive reports."""
+
+import os
+
+import google.auth
+
+_, project_id = google.auth.default()
+os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+
+from app.agent import root_agent
+
+
+
+================================================
+FILE: python/agents/deep-search/app/agent.py
+================================================
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import datetime
+import logging
+import re
+from collections.abc import AsyncGenerator
+from typing import Literal
+
+from google.adk.agents import BaseAgent, LlmAgent, LoopAgent, SequentialAgent
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.apps.app import App
+from google.adk.events import Event, EventActions
+from google.adk.planners import BuiltInPlanner
+from google.adk.tools import google_search
+from google.adk.tools.agent_tool import AgentTool
+from google.genai import types as genai_types
+from pydantic import BaseModel, Field
+
+from .config import config
+
+
+# --- Structured Output Models ---
+class SearchQuery(BaseModel):
+    """Model representing a specific search query for web search."""
+
+    search_query: str = Field(
+        description="A highly specific and targeted query for web search."
+    )
+
+
+class Feedback(BaseModel):
+    """Model for providing evaluation feedback on research quality."""
+
+    grade: Literal["pass", "fail"] = Field(
+        description="Evaluation result. 'pass' if the research is sufficient, 'fail' if it needs revision."
+    )
+    comment: str = Field(
+        description="Detailed explanation of the evaluation, highlighting strengths and/or weaknesses of the research."
+    )
+    follow_up_queries: list[SearchQuery] | None = Field(
+        default=None,
+        description="A list of specific, targeted follow-up search queries needed to fix research gaps. This should be null or empty if the grade is 'pass'.",
+    )
+
+
+# --- Callbacks ---
+def collect_research_sources_callback(
+    callback_context: CallbackContext,
+) -> None:
+    """Collects and organizes web-based research sources and their supported claims from agent events.
+
+    This function processes the agent's `session.events` to extract web source details (URLs,
+    titles, domains from `grounding_chunks`) and associated text segments with confidence scores
+    (from `grounding_supports`). The aggregated source information and a mapping of URLs to short
+    IDs are cumulatively stored in `callback_context.state`.
+
+    Args:
+        callback_context (CallbackContext): The context object providing access to the agent's
+            session events and persistent state.
+    """
+    session = callback_context._invocation_context.session
+    url_to_short_id = callback_context.state.get("url_to_short_id", {})
+    sources = callback_context.state.get("sources", {})
+    id_counter = len(url_to_short_id) + 1
+    for event in session.events:
+        if not (
+            event.grounding_metadata
+            and event.grounding_metadata.grounding_chunks
+        ):
+            continue
+        chunks_info = {}
+        for idx, chunk in enumerate(event.grounding_metadata.grounding_chunks):
+            if not chunk.web:
+                continue
+            url = chunk.web.uri
+            title = (
+                chunk.web.title
+                if chunk.web.title != chunk.web.domain
+                else chunk.web.domain
+            )
+            if url not in url_to_short_id:
+                short_id = f"src-{id_counter}"
+                url_to_short_id[url] = short_id
+                sources[short_id] = {
+                    "short_id": short_id,
+                    "title": title,
+                    "url": url,
+                    "domain": chunk.web.domain,
+                    "supported_claims": [],
+                }
+                id_counter += 1
+            chunks_info[idx] = url_to_short_id[url]
+        if event.grounding_metadata.grounding_supports:
+            for support in event.grounding_metadata.grounding_supports:
+                confidence_scores = support.confidence_scores or []
+                chunk_indices = support.grounding_chunk_indices or []
+                for i, chunk_idx in enumerate(chunk_indices):
+                    if chunk_idx in chunks_info:
+                        short_id = chunks_info[chunk_idx]
+                        confidence = (
+                            confidence_scores[i]
+                            if i < len(confidence_scores)
+                            else 0.5
+                        )
+                        text_segment = (
+                            support.segment.text if support.segment else ""
+                        )
+                        sources[short_id]["supported_claims"].append(
+                            {
+                                "text_segment": text_segment,
+                                "confidence": confidence,
+                            }
+                        )
+    callback_context.state["url_to_short_id"] = url_to_short_id
+    callback_context.state["sources"] = sources
+
+
+def citation_replacement_callback(
+    callback_context: CallbackContext,
+) -> genai_types.Content:
+    """Replaces citation tags in a report with Markdown-formatted links.
+
+    Processes 'final_cited_report' from context state, converting tags like
+    `<cite source="src-N"/>` into hyperlinks using source information from
+    `callback_context.state["sources"]`. Also fixes spacing around punctuation.
+
+    Args:
+        callback_context (CallbackContext): Contains the report and source information.
+
+    Returns:
+        genai_types.Content: The processed report with Markdown citation links.
+    """
+    final_report = callback_context.state.get("final_cited_report", "")
+    sources = callback_context.state.get("sources", {})
+
+    def tag_replacer(match: re.Match) -> str:
+        short_id = match.group(1)
+        if not (source_info := sources.get(short_id)):
+            logging.warning(
+                f"Invalid citation tag found and removed: {match.group(0)}"
+            )
+            return ""
+        display_text = source_info.get(
+            "title", source_info.get("domain", short_id)
+        )
+        return f" [{display_text}]({source_info['url']})"
+
+    processed_report = re.sub(
+        r'<cite\s+source\s*=\s*["\']?\s*(src-\d+)\s*["\']?\s*/>',
+        tag_replacer,
+        final_report,
+    )
+    processed_report = re.sub(r"\s+([.,;:])", r"\1", processed_report)
+    callback_context.state["final_report_with_citations"] = processed_report
+    return genai_types.Content(parts=[genai_types.Part(text=processed_report)])
+
+
+# --- Custom Agent for Loop Control ---
+class EscalationChecker(BaseAgent):
+    """Checks research evaluation and escalates to stop the loop if grade is 'pass'."""
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        evaluation_result = ctx.session.state.get("research_evaluation")
+        if evaluation_result and evaluation_result.get("grade") == "pass":
+            logging.info(
+                f"[{self.name}] Research evaluation passed. Escalating to stop loop."
+            )
+            yield Event(author=self.name, actions=EventActions(escalate=True))
+        else:
+            logging.info(
+                f"[{self.name}] Research evaluation failed or not found. Loop will continue."
+            )
+            # Yielding an event without content or actions just lets the flow continue.
+            yield Event(author=self.name)
+
+
+# --- AGENT DEFINITIONS ---
+plan_generator = LlmAgent(
+    model=config.worker_model,
+    name="plan_generator",
+    description="Generates or refine the existing 5 line action-oriented research plan, using minimal search only for topic clarification.",
+    instruction=f"""
+    You are a research strategist. Your job is to create a high-level RESEARCH PLAN, not a summary. If there is already a RESEARCH PLAN in the session state,
+    improve upon it based on the user feedback.
+
+    RESEARCH PLAN(SO FAR):
+    {{ research_plan? }}
+
+    **GENERAL INSTRUCTION: CLASSIFY TASK TYPES**
+    Your plan must clearly classify each goal for downstream execution. Each bullet point should start with a task type prefix:
+    - **`[RESEARCH]`**: For goals that primarily involve information gathering, investigation, analysis, or data collection (these require search tool usage by a researcher).
+    - **`[DELIVERABLE]`**: For goals that involve synthesizing collected information, creating structured outputs (e.g., tables, charts, summaries, reports), or compiling final output artifacts (these are executed AFTER research tasks, often without further search).
+
+    **INITIAL RULE: Your initial output MUST start with a bulleted list of 5 action-oriented research goals or key questions, followed by any *inherently implied* deliverables.**
+    - All initial 5 goals will be classified as `[RESEARCH]` tasks.
+    - A good goal for `[RESEARCH]` starts with a verb like "Analyze," "Identify," "Investigate."
+    - A bad output is a statement of fact like "The event was in April 2024."
+    - **Proactive Implied Deliverables (Initial):** If any of your initial 5 `[RESEARCH]` goals inherently imply a standard output or deliverable (e.g., a comparative analysis suggesting a comparison table, or a comprehensive review suggesting a summary document), you MUST add these as additional, distinct goals immediately after the initial 5. Phrase these as *synthesis or output creation actions* (e.g., "Create a summary," "Develop a comparison," "Compile a report") and prefix them with `[DELIVERABLE][IMPLIED]`.
+
+    **REFINEMENT RULE**:
+    - **Integrate Feedback & Mark Changes:** When incorporating user feedback, make targeted modifications to existing bullet points. Add `[MODIFIED]` to the existing task type and status prefix (e.g., `[RESEARCH][MODIFIED]`). If the feedback introduces new goals:
+        - If it's an information gathering task, prefix it with `[RESEARCH][NEW]`.
+        - If it's a synthesis or output creation task, prefix it with `[DELIVERABLE][NEW]`.
+    - **Proactive Implied Deliverables (Refinement):** Beyond explicit user feedback, if the nature of an existing `[RESEARCH]` goal (e.g., requiring a structured comparison, deep dive analysis, or broad synthesis) or a `[DELIVERABLE]` goal inherently implies an additional, standard output or synthesis step (e.g., a detailed report following a summary, or a visual representation of complex data), proactively add this as a new goal. Phrase these as *synthesis or output creation actions* and prefix them with `[DELIVERABLE][IMPLIED]`.
+    - **Maintain Order:** Strictly maintain the original sequential order of existing bullet points. New bullets, whether `[NEW]` or `[IMPLIED]`, should generally be appended to the list, unless the user explicitly instructs a specific insertion point.
+    - **Flexible Length:** The refined plan is no longer constrained by the initial 5-bullet limit and may comprise more goals as needed to fully address the feedback and implied deliverables.
+
+    **TOOL USE IS STRICTLY LIMITED:**
+    Your goal is to create a generic, high-quality plan *without searching*.
+    Only use `google_search` if a topic is ambiguous or time-sensitive and you absolutely cannot create a plan without a key piece of identifying information.
+    You are explicitly forbidden from researching the *content* or *themes* of the topic. That is the next agent's job. Your search is only to identify the subject, not to investigate it.
+    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
+    """,
+    tools=[google_search],
+)
+
+
+section_planner = LlmAgent(
+    model=config.worker_model,
+    name="section_planner",
+    description="Breaks down the research plan into a structured markdown outline of report sections.",
+    instruction="""
+    You are an expert report architect. Using the research topic and the plan from the 'research_plan' state key, design a logical structure for the final report.
+    Note: Ignore all the tag nanes ([MODIFIED], [NEW], [RESEARCH], [DELIVERABLE]) in the research plan.
+    Your task is to create a markdown outline with 4-6 distinct sections that cover the topic comprehensively without overlap.
+    You can use any markdown format you prefer, but here's a suggested structure:
+    # Section Name
+    A brief overview of what this section covers
+    Feel free to add subsections or bullet points if needed to better organize the content.
+    Make sure your outline is clear and easy to follow.
+    Do not include a "References" or "Sources" section in your outline. Citations will be handled in-line.
+    """,
+    output_key="report_sections",
+)
+
+
+section_researcher = LlmAgent(
+    model=config.worker_model,
+    name="section_researcher",
+    description="Performs the crucial first pass of web research.",
+    planner=BuiltInPlanner(
+        thinking_config=genai_types.ThinkingConfig(include_thoughts=True)
+    ),
+    instruction="""
+    You are a highly capable and diligent research and synthesis agent. Your comprehensive task is to execute a provided research plan with **absolute fidelity**, first by gathering necessary information, and then by synthesizing that information into specified outputs.
+
+    You will be provided with a sequential list of research plan goals, stored in the `research_plan` state key. Each goal will be clearly prefixed with its primary task type: `[RESEARCH]` or `[DELIVERABLE]`.
+
+    Your execution process must strictly adhere to these two distinct and sequential phases:
+
+    ---
+
+    **Phase 1: Information Gathering (`[RESEARCH]` Tasks)**
+
+    *   **Execution Directive:** You **MUST** systematically process every goal prefixed with `[RESEARCH]` before proceeding to Phase 2.
+    *   For each `[RESEARCH]` goal:
+        *   **Query Generation:** Formulate a comprehensive set of 4-5 targeted search queries. These queries must be expertly designed to broadly cover the specific intent of the `[RESEARCH]` goal from multiple angles.
+        *   **Execution:** Utilize the `google_search` tool to execute **all** generated queries for the current `[RESEARCH]` goal.
+        *   **Summarization:** Synthesize the search results into a detailed, coherent summary that directly addresses the objective of the `[RESEARCH]` goal.
+        *   **Internal Storage:** Store this summary, clearly tagged or indexed by its corresponding `[RESEARCH]` goal, for later and exclusive use in Phase 2. You **MUST NOT** lose or discard any generated summaries.
+
+    ---
+
+    **Phase 2: Synthesis and Output Creation (`[DELIVERABLE]` Tasks)**
+
+    *   **Execution Prerequisite:** This phase **MUST ONLY COMMENCE** once **ALL** `[RESEARCH]` goals from Phase 1 have been fully completed and their summaries are internally stored.
+    *   **Execution Directive:** You **MUST** systematically process **every** goal prefixed with `[DELIVERABLE]`. For each `[DELIVERABLE]` goal, your directive is to **PRODUCE** the artifact as explicitly described.
+    *   For each `[DELIVERABLE]` goal:
+        *   **Instruction Interpretation:** You will interpret the goal's text (following the `[DELIVERABLE]` tag) as a **direct and non-negotiable instruction** to generate a specific output artifact.
+            *   *If the instruction details a table (e.g., "Create a Detailed Comparison Table in Markdown format"), your output for this step **MUST** be a properly formatted Markdown table utilizing columns and rows as implied by the instruction and the prepared data.*
+            *   *If the instruction states to prepare a summary, report, or any other structured output, your output for this step **MUST** be that precise artifact.*
+        *   **Data Consolidation:** Access and utilize **ONLY** the summaries generated during Phase 1 (`[RESEARCH]` tasks`) to fulfill the requirements of the current `[DELIVERABLE]` goal. You **MUST NOT** perform new searches.
+        *   **Output Generation:** Based on the specific instruction of the `[DELIVERABLE]` goal:
+            *   Carefully extract, organize, and synthesize the relevant information from your previously gathered summaries.
+            *   Must always produce the specified output artifact (e.g., a concise summary, a structured comparison table, a comprehensive report, a visual representation, etc.) with accuracy and completeness.
+        *   **Output Accumulation:** Maintain and accumulate **all** the generated `[DELIVERABLE]` artifacts. These are your final outputs.
+
+    ---
+
+    **Final Output:** Your final output will comprise the complete set of processed summaries from `[RESEARCH]` tasks AND all the generated artifacts from `[DELIVERABLE]` tasks, presented clearly and distinctly.
+    """,
+    tools=[google_search],
+    output_key="section_research_findings",
+    after_agent_callback=collect_research_sources_callback,
+)
+
+research_evaluator = LlmAgent(
+    model=config.critic_model,
+    name="research_evaluator",
+    description="Critically evaluates research and generates follow-up queries.",
+    instruction=f"""
+    You are a meticulous quality assurance analyst evaluating the research findings in 'section_research_findings'.
+
+    **CRITICAL RULES:**
+    1. Assume the given research topic is correct. Do not question or try to verify the subject itself.
+    2. Your ONLY job is to assess the quality, depth, and completeness of the research provided *for that topic*.
+    3. Focus on evaluating: Comprehensiveness of coverage, logical flow and organization, use of credible sources, depth of analysis, and clarity of explanations.
+    4. Do NOT fact-check or question the fundamental premise or timeline of the topic.
+    5. If suggesting follow-up queries, they should dive deeper into the existing topic, not question its validity.
+
+    Be very critical about the QUALITY of research. If you find significant gaps in depth or coverage, assign a grade of "fail",
+    write a detailed comment about what's missing, and generate 5-7 specific follow-up queries to fill those gaps.
+    If the research thoroughly covers the topic, grade "pass".
+
+    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
+    Your response must be a single, raw JSON object validating against the 'Feedback' schema.
+    """,
+    output_schema=Feedback,
+    disallow_transfer_to_parent=True,
+    disallow_transfer_to_peers=True,
+    output_key="research_evaluation",
+)
+
+enhanced_search_executor = LlmAgent(
+    model=config.worker_model,
+    name="enhanced_search_executor",
+    description="Executes follow-up searches and integrates new findings.",
+    planner=BuiltInPlanner(
+        thinking_config=genai_types.ThinkingConfig(include_thoughts=True)
+    ),
+    instruction="""
+    You are a specialist researcher executing a refinement pass.
+    You have been activated because the previous research was graded as 'fail'.
+
+    1.  Review the 'research_evaluation' state key to understand the feedback and required fixes.
+    2.  Execute EVERY query listed in 'follow_up_queries' using the 'google_search' tool.
+    3.  Synthesize the new findings and COMBINE them with the existing information in 'section_research_findings'.
+    4.  Your output MUST be the new, complete, and improved set of research findings.
+    """,
+    tools=[google_search],
+    output_key="section_research_findings",
+    after_agent_callback=collect_research_sources_callback,
+)
+
+report_composer = LlmAgent(
+    model=config.critic_model,
+    name="report_composer_with_citations",
+    include_contents="none",
+    description="Transforms research data and a markdown outline into a final, cited report.",
+    instruction="""
+    Transform the provided data into a polished, professional, and meticulously cited research report.
+
+    ---
+    ### INPUT DATA
+    *   Research Plan: `{research_plan}`
+    *   Research Findings: `{section_research_findings}`
+    *   Citation Sources: `{sources}`
+    *   Report Structure: `{report_sections}`
+
+    ---
+    ### CRITICAL: Citation System
+    To cite a source, you MUST insert a special citation tag directly after the claim it supports.
+
+    **The only correct format is:** `<cite source="src-ID_NUMBER" />`
+
+    ---
+    ### Final Instructions
+    Generate a comprehensive report using ONLY the `<cite source="src-ID_NUMBER" />` tag system for all citations.
+    The final report must strictly follow the structure provided in the **Report Structure** markdown outline.
+    Do not include a "References" or "Sources" section; all citations must be in-line.
+    """,
+    output_key="final_cited_report",
+    after_agent_callback=citation_replacement_callback,
+)
+
+research_pipeline = SequentialAgent(
+    name="research_pipeline",
+    description="Executes a pre-approved research plan. It performs iterative research, evaluation, and composes a final, cited report.",
+    sub_agents=[
+        section_planner,
+        section_researcher,
+        LoopAgent(
+            name="iterative_refinement_loop",
+            max_iterations=config.max_search_iterations,
+            sub_agents=[
+                research_evaluator,
+                EscalationChecker(name="escalation_checker"),
+                enhanced_search_executor,
+            ],
+        ),
+        report_composer,
+    ],
+)
+
+interactive_planner_agent = LlmAgent(
+    name="interactive_planner_agent",
+    model=config.worker_model,
+    description="The primary research assistant. It collaborates with the user to create a research plan, and then executes it upon approval.",
+    instruction=f"""
+    You are a research planning assistant. Your primary function is to convert ANY user request into a research plan.
+
+    **CRITICAL RULE: Never answer a question directly or refuse a request.** Your one and only first step is to use the `plan_generator` tool to propose a research plan for the user's topic.
+    If the user asks a question, you MUST immediately call `plan_generator` to create a plan to answer the question.
+
+    Your workflow is:
+    1.  **Plan:** Use `plan_generator` to create a draft plan and present it to the user.
+    2.  **Refine:** Incorporate user feedback until the plan is approved.
+    3.  **Execute:** Once the user gives EXPLICIT approval (e.g., "looks good, run it"), you MUST delegate the task to the `research_pipeline` agent, passing the approved plan.
+
+    Current date: {datetime.datetime.now().strftime("%Y-%m-%d")}
+    Do not perform any research yourself. Your job is to Plan, Refine, and Delegate.
+    """,
+    sub_agents=[research_pipeline],
+    tools=[AgentTool(plan_generator)],
+    output_key="research_plan",
+)
+
+root_agent = interactive_planner_agent
+app = App(root_agent=root_agent, name="app")
+
+
+
+================================================
+FILE: python/agents/deep-search/app/config.py
+================================================
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file in the app directory
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+# Authentication Configuration:
+# By default, uses AI Studio with GOOGLE_API_KEY from .env file.
+# To use Vertex AI instead, set GOOGLE_GENAI_USE_VERTEXAI=TRUE in your .env
+# and ensure you have Google Cloud credentials configured.
+
+if os.getenv("GOOGLE_API_KEY"):
+    # AI Studio mode (default): Use API key authentication
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "False")
+else:
+    # Vertex AI mode: Fall back to Google Cloud credentials
+    import google.auth
+
+    _, project_id = google.auth.default()
+    os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project_id or "")
+    os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "global")
+    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "True")
+
+
+@dataclass
+class ResearchConfiguration:
+    """Configuration for research-related models and parameters.
+
+    Attributes:
+        critic_model (str): Model for evaluation tasks.
+        worker_model (str): Model for working/generation tasks.
+        max_search_iterations (int): Maximum search iterations allowed.
+    """
+
+    critic_model: str = "gemini-3.1-pro-preview"
+    worker_model: str = "gemini-3.1-pro-preview"
+    max_search_iterations: int = 5
+
+
+config = ResearchConfiguration()
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/components.json
+================================================
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/app.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+
+
+================================================
+FILE: python/agents/deep-search/frontend/eslint.config.js
+================================================
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+
+export default tseslint.config(
+  { ignores: ['dist'] },
+  {
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+    },
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+    },
+  },
+)
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/index.html
+================================================
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ADK Deep Search Agent</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/package.json
+================================================
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.55",
+    "@langchain/langgraph-sdk": "^0.0.74",
+    "@radix-ui/react-scroll-area": "^1.2.8",
+    "@radix-ui/react-select": "^2.2.4",
+    "@radix-ui/react-slot": "^1.2.2",
+    "@radix-ui/react-tabs": "^1.1.11",
+    "@radix-ui/react-tooltip": "^1.2.6",
+    "@tailwindcss/vite": "^4.1.5",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.508.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^9.0.3",
+    "react-router-dom": "^7.5.3",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.2.0",
+    "tailwindcss": "^4.1.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/node": "^22.15.17",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.3",
+    "@vitejs/plugin-react-swc": "^3.9.0",
+    "eslint": "^9.22.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.19",
+    "globals": "^16.0.0",
+    "tw-animate-css": "^1.2.9",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.26.1",
+    "vite": "^6.4.1"
+  }
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable","dom"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src","vite.config.ts"]
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/tsconfig.node.json
+================================================
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/vite.config.ts
+================================================
+import path from "node:path";
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import tailwindcss from "@tailwindcss/vite";
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  base: "/app/",
+  resolve: {
+    alias: {
+      "@": path.resolve(new URL(".", import.meta.url).pathname, "./src"),
+    },
+  },
+  server: {
+    // Makes the server accessible on the local network (e.g., for mobile testing)
+    host: true,
+    // Should be disabled or limited when deployed in untrusted network environments.
+    allowedHosts: true,
+    proxy: {
+      // Proxy API requests to the backend server
+      "/api": {
+        target: "http://127.0.0.1:8000", // Default backend address
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Sending Request to the Target:', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
+          });
+        },
+      },
+    },
+  },
+});
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/App.tsx
+================================================
+import { useState, useRef, useCallback, useEffect } from "react";
+import { v4 as uuidv4 } from 'uuid';
+import { WelcomeScreen } from "@/components/WelcomeScreen";
+import { ChatMessagesView } from "@/components/ChatMessagesView";
+
+// Update DisplayData to be a string type
+type DisplayData = string | null;
+interface MessageWithAgent {
+  type: "human" | "ai";
+  content: string;
+  id: string;
+  agent?: string;
+  finalReportWithCitations?: boolean;
+}
+
+interface AgentMessage {
+  parts: { text: string }[];
+  role: string;
+}
+
+interface AgentResponse {
+  content: AgentMessage;
+  usageMetadata: {
+    candidatesTokenCount: number;
+    promptTokenCount: number;
+    totalTokenCount: number;
+  };
+  author: string;
+  actions: {
+    stateDelta: {
+      research_plan?: string;
+      final_report_with_citations?: boolean;
+    };
+  };
+}
+
+interface ProcessedEvent {
+  title: string;
+  data: any;
+}
+
+export default function App() {
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [appName, setAppName] = useState<string | null>(null);
+  const [messages, setMessages] = useState<MessageWithAgent[]>([]);
+  const [displayData, setDisplayData] = useState<DisplayData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [messageEvents, setMessageEvents] = useState<Map<string, ProcessedEvent[]>>(new Map());
+  const [websiteCount, setWebsiteCount] = useState<number>(0);
+  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [isCheckingBackend, setIsCheckingBackend] = useState(true);
+  const currentAgentRef = useRef('');
+  const accumulatedTextRef = useRef("");
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  const retryWithBackoff = async (
+    fn: () => Promise<any>,
+    maxRetries: number = 10,
+    maxDuration: number = 120000 // 2 minutes
+  ): Promise<any> => {
+    const startTime = Date.now();
+    let lastError: Error;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (Date.now() - startTime > maxDuration) {
+        throw new Error(`Retry timeout after ${maxDuration}ms`);
+      }
+      
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        const delay = Math.min(1000 * Math.pow(2, attempt), 5000); // Exponential backoff, max 5s
+        console.log(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`, error);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError!;
+  };
+
+  const createSession = async (): Promise<{userId: string, sessionId: string, appName: string}> => {
+    const generatedSessionId = uuidv4();
+    const response = await fetch(`/api/apps/app/users/u_999/sessions/${generatedSessionId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to create session: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return {
+      userId: data.userId,
+      sessionId: data.id,
+      appName: data.appName
+    };
+  };
+
+  const checkBackendHealth = async (): Promise<boolean> => {
+    try {
+      // Use the docs endpoint or root endpoint to check if backend is ready
+      const response = await fetch("/api/docs", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      return response.ok;
+    } catch (error) {
+      console.log("Backend not ready yet:", error);
+      return false;
+    }
+  };
+
+  // Function to extract text and metadata from SSE data
+  const extractDataFromSSE = (data: string) => {
+    try {
+      const parsed = JSON.parse(data);
+      console.log('[SSE PARSED EVENT]:', JSON.stringify(parsed, null, 2)); // DEBUG: Log parsed event
+
+      let textParts: string[] = [];
+      let agent = '';
+      let finalReportWithCitations = undefined;
+      let functionCall = null;
+      let functionResponse = null;
+      let sources = null;
+
+      // Check if content.parts exists and has text
+      if (parsed.content && parsed.content.parts) {
+        textParts = parsed.content.parts
+          .filter((part: any) => part.text)
+          .map((part: any) => part.text);
+        
+        // Check for function calls
+        const functionCallPart = parsed.content.parts.find((part: any) => part.functionCall);
+        if (functionCallPart) {
+          functionCall = functionCallPart.functionCall;
+        }
+        
+        // Check for function responses
+        const functionResponsePart = parsed.content.parts.find((part: any) => part.functionResponse);
+        if (functionResponsePart) {
+          functionResponse = functionResponsePart.functionResponse;
+        }
+      }
+
+      // Extract agent information
+      if (parsed.author) {
+        agent = parsed.author;
+        console.log('[SSE EXTRACT] Agent:', agent); // DEBUG: Log agent
+      }
+
+      if (
+        parsed.actions &&
+        parsed.actions.stateDelta &&
+        parsed.actions.stateDelta.final_report_with_citations
+      ) {
+        finalReportWithCitations = parsed.actions.stateDelta.final_report_with_citations;
+      }
+
+      // Extract website count from research agents
+      let sourceCount = 0;
+      if ((parsed.author === 'section_researcher' || parsed.author === 'enhanced_search_executor')) {
+        console.log('[SSE EXTRACT] Relevant agent for source count:', parsed.author); // DEBUG
+        if (parsed.actions?.stateDelta?.url_to_short_id) {
+          console.log('[SSE EXTRACT] url_to_short_id found:', parsed.actions.stateDelta.url_to_short_id); // DEBUG
+          sourceCount = Object.keys(parsed.actions.stateDelta.url_to_short_id).length;
+          console.log('[SSE EXTRACT] Calculated sourceCount:', sourceCount); // DEBUG
+        } else {
+          console.log('[SSE EXTRACT] url_to_short_id NOT found for agent:', parsed.author); // DEBUG
+        }
+      }
+
+      // Extract sources if available
+      if (parsed.actions?.stateDelta?.sources) {
+        sources = parsed.actions.stateDelta.sources;
+        console.log('[SSE EXTRACT] Sources found:', sources); // DEBUG
+      }
+
+
+      return { textParts, agent, finalReportWithCitations, functionCall, functionResponse, sourceCount, sources };
+    } catch (error) {
+      // Log the error and a truncated version of the problematic data for easier debugging.
+      const truncatedData = data.length > 200 ? data.substring(0, 200) + "..." : data;
+      console.error('Error parsing SSE data. Raw data (truncated): "', truncatedData, '". Error details:', error);
+      return { textParts: [], agent: '', finalReportWithCitations: undefined, functionCall: null, functionResponse: null, sourceCount: 0, sources: null };
+    }
+  };
+
+  // Define getEventTitle here or ensure it's in scope from where it's used
+  const getEventTitle = (agentName: string): string => {
+    switch (agentName) {
+      case "plan_generator":
+        return "Planning Research Strategy";
+      case "section_planner":
+        return "Structuring Report Outline";
+      case "section_researcher":
+        return "Initial Web Research";
+      case "research_evaluator":
+        return "Evaluating Research Quality";
+      case "EscalationChecker":
+        return "Quality Assessment";
+      case "enhanced_search_executor":
+        return "Enhanced Web Research";
+      case "research_pipeline":
+        return "Executing Research Pipeline";
+      case "iterative_refinement_loop":
+        return "Refining Research";
+      case "interactive_planner_agent":
+      case "root_agent":
+        return "Interactive Planning";
+      default:
+        return `Processing (${agentName || 'Unknown Agent'})`;
+    }
+  };
+
+  const processSseEventData = (jsonData: string, aiMessageId: string) => {
+    const { textParts, agent, finalReportWithCitations, functionCall, functionResponse, sourceCount, sources } = extractDataFromSSE(jsonData);
+
+    if (sourceCount > 0) {
+      console.log('[SSE HANDLER] Updating websiteCount. Current sourceCount:', sourceCount);
+      setWebsiteCount(prev => Math.max(prev, sourceCount));
+    }
+
+    if (agent && agent !== currentAgentRef.current) {
+      currentAgentRef.current = agent;
+    }
+
+    if (functionCall) {
+      const functionCallTitle = `Function Call: ${functionCall.name}`;
+      console.log('[SSE HANDLER] Adding Function Call timeline event:', functionCallTitle);
+      setMessageEvents(prev => new Map(prev).set(aiMessageId, [...(prev.get(aiMessageId) || []), {
+        title: functionCallTitle,
+        data: { type: 'functionCall', name: functionCall.name, args: functionCall.args, id: functionCall.id }
+      }]));
+    }
+
+    if (functionResponse) {
+      const functionResponseTitle = `Function Response: ${functionResponse.name}`;
+      console.log('[SSE HANDLER] Adding Function Response timeline event:', functionResponseTitle);
+      setMessageEvents(prev => new Map(prev).set(aiMessageId, [...(prev.get(aiMessageId) || []), {
+        title: functionResponseTitle,
+        data: { type: 'functionResponse', name: functionResponse.name, response: functionResponse.response, id: functionResponse.id }
+      }]));
+    }
+
+    if (textParts.length > 0 && agent !== "report_composer_with_citations") {
+      if (agent !== "interactive_planner_agent") {
+        const eventTitle = getEventTitle(agent);
+        console.log('[SSE HANDLER] Adding Text timeline event for agent:', agent, 'Title:', eventTitle, 'Data:', textParts.join(" "));
+        setMessageEvents(prev => new Map(prev).set(aiMessageId, [...(prev.get(aiMessageId) || []), {
+          title: eventTitle,
+          data: { type: 'text', content: textParts.join(" ") }
+        }]));
+      } else { // interactive_planner_agent text updates the main AI message
+        for (const text of textParts) {
+          accumulatedTextRef.current += text + " ";
+          setMessages(prev => prev.map(msg =>
+            msg.id === aiMessageId ? { ...msg, content: accumulatedTextRef.current.trim(), agent: currentAgentRef.current || msg.agent } : msg
+          ));
+          setDisplayData(accumulatedTextRef.current.trim());
+        }
+      }
+    }
+
+    if (sources) {
+      console.log('[SSE HANDLER] Adding Retrieved Sources timeline event:', sources);
+      setMessageEvents(prev => new Map(prev).set(aiMessageId, [...(prev.get(aiMessageId) || []), {
+        title: "Retrieved Sources", data: { type: 'sources', content: sources }
+      }]));
+    }
+
+    if (agent === "report_composer_with_citations" && finalReportWithCitations) {
+      const finalReportMessageId = Date.now().toString() + "_final";
+      setMessages(prev => [...prev, { type: "ai", content: finalReportWithCitations as string, id: finalReportMessageId, agent: currentAgentRef.current, finalReportWithCitations: true }]);
+      setDisplayData(finalReportWithCitations as string);
+    }
+  };
+
+  const handleSubmit = useCallback(async (query: string, model: string, effort: string) => {
+    if (!query.trim()) return;
+
+    setIsLoading(true);
+    try {
+      // Create session if it doesn't exist
+      let currentUserId = userId;
+      let currentSessionId = sessionId;
+      let currentAppName = appName;
+      
+      if (!currentSessionId || !currentUserId || !currentAppName) {
+        console.log('Creating new session...');
+        const sessionData = await retryWithBackoff(createSession);
+        currentUserId = sessionData.userId;
+        currentSessionId = sessionData.sessionId;
+        currentAppName = sessionData.appName;
+        
+        setUserId(currentUserId);
+        setSessionId(currentSessionId);
+        setAppName(currentAppName);
+        console.log('Session created successfully:', { currentUserId, currentSessionId, currentAppName });
+      }
+
+      // Add user message to chat
+      const userMessageId = Date.now().toString();
+      setMessages(prev => [...prev, { type: "human", content: query, id: userMessageId }]);
+
+      // Create AI message placeholder
+      const aiMessageId = Date.now().toString() + "_ai";
+      currentAgentRef.current = ''; // Reset current agent
+      accumulatedTextRef.current = ''; // Reset accumulated text
+
+      setMessages(prev => [...prev, {
+        type: "ai",
+        content: "",
+        id: aiMessageId,
+        agent: '',
+      }]);
+
+      // Send the message with retry logic
+      const sendMessage = async () => {
+        const response = await fetch("/api/run_sse", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            appName: currentAppName,
+            userId: currentUserId,
+            sessionId: currentSessionId,
+            newMessage: {
+              parts: [{ text: query }],
+              role: "user"
+            },
+            streaming: false
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
+        }
+        
+        return response;
+      };
+
+      const response = await retryWithBackoff(sendMessage);
+
+      // Handle SSE streaming
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let lineBuffer = ""; 
+      let eventDataBuffer = "";
+
+      if (reader) {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (value) {
+            lineBuffer += decoder.decode(value, { stream: true });
+          }
+          
+          let eolIndex;
+          // Process all complete lines in the buffer, or the remaining buffer if 'done'
+          while ((eolIndex = lineBuffer.indexOf('\n')) >= 0 || (done && lineBuffer.length > 0)) {
+            let line: string;
+            if (eolIndex >= 0) {
+              line = lineBuffer.substring(0, eolIndex);
+              lineBuffer = lineBuffer.substring(eolIndex + 1);
+            } else { // Only if done and lineBuffer has content without a trailing newline
+              line = lineBuffer;
+              lineBuffer = "";
+            }
+
+            if (line.trim() === "") { // Empty line: dispatch event
+              if (eventDataBuffer.length > 0) {
+                // Remove trailing newline before parsing
+                const jsonDataToParse = eventDataBuffer.endsWith('\n') ? eventDataBuffer.slice(0, -1) : eventDataBuffer;
+                console.log('[SSE DISPATCH EVENT]:', jsonDataToParse.substring(0, 200) + "..."); // DEBUG
+                processSseEventData(jsonDataToParse, aiMessageId);
+                eventDataBuffer = ""; // Reset for next event
+              }
+            } else if (line.startsWith('data:')) {
+              eventDataBuffer += line.substring(5).trimStart() + '\n'; // Add newline as per spec for multi-line data
+            } else if (line.startsWith(':')) {
+              // Comment line, ignore
+            } // Other SSE fields (event, id, retry) can be handled here if needed
+          }
+
+          if (done) {
+            // If the loop exited due to 'done', and there's still data in eventDataBuffer
+            // (e.g., stream ended after data lines but before an empty line delimiter)
+            if (eventDataBuffer.length > 0) {
+              const jsonDataToParse = eventDataBuffer.endsWith('\n') ? eventDataBuffer.slice(0, -1) : eventDataBuffer;
+              console.log('[SSE DISPATCH FINAL EVENT]:', jsonDataToParse.substring(0,200) + "..."); // DEBUG
+              processSseEventData(jsonDataToParse, aiMessageId);
+              eventDataBuffer = ""; // Clear buffer
+            }
+            break; // Exit the while(true) loop
+          }
+        }
+      }
+
+      setIsLoading(false);
+
+    } catch (error) {
+      console.error("Error:", error);
+      // Update the AI message placeholder with an error message
+      const aiMessageId = Date.now().toString() + "_ai_error";
+      setMessages(prev => [...prev, { 
+        type: "ai", 
+        content: `Sorry, there was an error processing your request: ${error instanceof Error ? error.message : 'Unknown error'}`, 
+        id: aiMessageId 
+      }]);
+      setIsLoading(false);
+    }
+  }, [processSseEventData]);
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const scrollViewport = scrollAreaRef.current.querySelector(
+        "[data-radix-scroll-area-viewport]"
+      );
+      if (scrollViewport) {
+        scrollViewport.scrollTop = scrollViewport.scrollHeight;
+      }
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const checkBackend = async () => {
+      setIsCheckingBackend(true);
+      
+      // Check if backend is ready with retry logic
+      const maxAttempts = 60; // 2 minutes with 2-second intervals
+      let attempts = 0;
+      
+      while (attempts < maxAttempts) {
+        const isReady = await checkBackendHealth();
+        if (isReady) {
+          setIsBackendReady(true);
+          setIsCheckingBackend(false);
+          return;
+        }
+        
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between checks
+      }
+      
+      // If we get here, backend didn't come up in time
+      setIsCheckingBackend(false);
+      console.error("Backend failed to start within 2 minutes");
+    };
+    
+    checkBackend();
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    setMessages([]);
+    setDisplayData(null);
+    setMessageEvents(new Map());
+    setWebsiteCount(0);
+    window.location.reload();
+  }, []);
+
+  // Scroll to bottom when messages update
+  const scrollToBottom = useCallback(() => {
+    if (scrollAreaRef.current) {
+      const scrollViewport = scrollAreaRef.current.querySelector(
+        "[data-radix-scroll-area-viewport]"
+      );
+      if (scrollViewport) {
+        scrollViewport.scrollTop = scrollViewport.scrollHeight;
+      }
+    }
+  }, []);
+
+  const BackendLoadingScreen = () => (
+    <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative">
+      <div className="w-full max-w-2xl z-10
+                      bg-neutral-900/50 backdrop-blur-md 
+                      p-8 rounded-2xl border border-neutral-700 
+                      shadow-2xl shadow-black/60">
+        
+        <div className="text-center space-y-6">
+          <h1 className="text-4xl font-bold text-white flex items-center justify-center gap-3">
+            ✨ Deep Search - ADK 🚀
+          </h1>
+          
+          <div className="flex flex-col items-center space-y-4">
+            {/* Spinning animation */}
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-neutral-600 border-t-blue-500 rounded-full animate-spin"></div>
+              <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-r-purple-500 rounded-full animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+            </div>
+            
+            <div className="space-y-2">
+              <p className="text-xl text-neutral-300">
+                Waiting for backend to be ready...
+              </p>
+              <p className="text-sm text-neutral-400">
+                This may take a moment on first startup
+              </p>
+            </div>
+            
+            {/* Animated dots */}
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+              <div className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
+      <main className="flex-1 flex flex-col overflow-hidden w-full">
+        <div className={`flex-1 overflow-y-auto ${(messages.length === 0 || isCheckingBackend) ? "flex" : ""}`}>
+          {isCheckingBackend ? (
+            <BackendLoadingScreen />
+          ) : !isBackendReady ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-4">
+              <div className="text-center space-y-4">
+                <h2 className="text-2xl font-bold text-red-400">Backend Unavailable</h2>
+                <p className="text-neutral-300">
+                  Unable to connect to backend services at localhost:8000
+                </p>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
+            <WelcomeScreen
+              handleSubmit={handleSubmit}
+              isLoading={isLoading}
+              onCancel={handleCancel}
+            />
+          ) : (
+            <ChatMessagesView
+              messages={messages}
+              isLoading={isLoading}
+              scrollAreaRef={scrollAreaRef}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+              displayData={displayData}
+              messageEvents={messageEvents}
+              websiteCount={websiteCount}
+            />
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/global.css
+================================================
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Animation Delays */
+.animation-delay-200 { animation-delay: 0.2s; }
+.animation-delay-400 { animation-delay: 0.4s; }
+.animation-delay-600 { animation-delay: 0.6s; }
+.animation-delay-800 { animation-delay: 0.8s; }
+
+/* Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInUpSmooth {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Animation Classes */
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+.animate-fadeInUp {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+.animate-fadeInUpSmooth {
+  animation: fadeInUpSmooth 0.3s ease-out forwards;
+}
+
+/* Ensure your body or html has a dark background if not already set, e.g.: */
+/* body { background-color: #0c0c0d; } */ /* This is similar to neutral-950 */
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/main.tsx
+================================================
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import "./global.css";
+import App from "./App.tsx";
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </StrictMode>
+);
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/utils.ts
+================================================
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/vite-env.d.ts
+================================================
+/// <reference types="vite/client" />
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ActivityTimeline.tsx
+================================================
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Loader2,
+  Activity,
+  Info,
+  Search,
+  TextSearch,
+  Brain,
+  Pen,
+  ChevronDown,
+  ChevronUp,
+  Link,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+
+export interface ProcessedEvent {
+  title: string;
+  data: any;
+}
+
+interface ActivityTimelineProps {
+  processedEvents: ProcessedEvent[];
+  isLoading: boolean;
+  websiteCount: number;
+}
+
+export function ActivityTimeline({
+  processedEvents,
+  isLoading,
+  websiteCount,
+}: ActivityTimelineProps) {
+  const [isTimelineCollapsed, setIsTimelineCollapsed] =
+    useState<boolean>(false);
+
+  const formatEventData = (data: any): string => {
+    // Handle new structured data types
+    if (typeof data === "object" && data !== null && data.type) {
+      switch (data.type) {
+        case 'functionCall':
+          return `Calling function: ${data.name}\nArguments: ${JSON.stringify(data.args, null, 2)}`;
+        case 'functionResponse':
+          return `Function ${data.name} response:\n${JSON.stringify(data.response, null, 2)}`;
+        case 'text':
+          return data.content;
+        case 'sources':
+          const sources = data.content as Record<string, { title: string; url: string }>;
+          if (Object.keys(sources).length === 0) {
+            return "No sources found.";
+          }
+          return Object.values(sources)
+            .map(source => `[${source.title || 'Untitled Source'}](${source.url})`).join(', ');
+        default:
+          return JSON.stringify(data, null, 2);
+      }
+    }
+    
+    // Existing logic for backward compatibility
+    if (typeof data === "string") {
+      // Try to parse as JSON first
+      try {
+        const parsed = JSON.parse(data);
+        return JSON.stringify(parsed, null, 2);
+      } catch {
+        // If not JSON, return as string (could be markdown)
+        return data;
+      }
+    } else if (Array.isArray(data)) {
+      return data.join(", ");
+    } else if (typeof data === "object" && data !== null) {
+      return JSON.stringify(data, null, 2);
+    }
+    return String(data);
+  };
+
+  const isJsonData = (data: any): boolean => {
+    // Handle new structured data types
+    if (typeof data === "object" && data !== null && data.type) {
+      if (data.type === 'sources') {
+        return false; // Let ReactMarkdown handle this
+      }
+      return data.type === 'functionCall' || data.type === 'functionResponse';
+    }
+    
+    // Existing logic
+    if (typeof data === "string") {
+      try {
+        JSON.parse(data);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return typeof data === "object" && data !== null;
+  };
+  const getEventIcon = (title: string, index: number) => {
+    if (index === 0 && isLoading && processedEvents.length === 0) {
+      return <Loader2 className="h-4 w-4 text-neutral-400 animate-spin" />;
+    }
+    if (title.toLowerCase().includes("function call")) {
+      return <Activity className="h-4 w-4 text-blue-400" />;
+    } else if (title.toLowerCase().includes("function response")) {
+      return <Activity className="h-4 w-4 text-green-400" />;
+    } else if (title.toLowerCase().includes("generating")) {
+      return <TextSearch className="h-4 w-4 text-neutral-400" />;
+    } else if (title.toLowerCase().includes("thinking")) {
+      return <Loader2 className="h-4 w-4 text-neutral-400 animate-spin" />;
+    } else if (title.toLowerCase().includes("reflection")) {
+      return <Brain className="h-4 w-4 text-neutral-400" />;
+    } else if (title.toLowerCase().includes("research")) {
+      return <Search className="h-4 w-4 text-neutral-400" />;
+    } else if (title.toLowerCase().includes("finalizing")) {
+      return <Pen className="h-4 w-4 text-neutral-400" />;
+    } else if (title.toLowerCase().includes("retrieved sources")) {
+      return <Link className="h-4 w-4 text-yellow-400" />;
+    }
+    return <Activity className="h-4 w-4 text-neutral-400" />;
+  };
+
+  useEffect(() => {
+    if (!isLoading && processedEvents.length !== 0) {
+      setIsTimelineCollapsed(true);
+    }
+  }, [isLoading, processedEvents]);
+  return (
+    <Card className={`border-none rounded-lg bg-neutral-700 ${isTimelineCollapsed ? "h-10 py-2" : "max-h-96 py-2"}`}>
+      <CardHeader className="py-0">
+        <CardDescription className="flex items-center justify-between">
+          <div
+            className="flex items-center justify-start text-sm w-full cursor-pointer gap-2 text-neutral-100"
+            onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+          >
+            <span>Research</span>
+            {websiteCount > 0 && (
+              <span className="text-xs bg-neutral-600 px-2 py-0.5 rounded-full">
+                {websiteCount} websites
+              </span>
+            )}
+            {isTimelineCollapsed ? (
+              <ChevronDown className="h-4 w-4 mr-2" />
+            ) : (
+              <ChevronUp className="h-4 w-4 mr-2" />
+            )}
+          </div>
+        </CardDescription>
+      </CardHeader>
+      {!isTimelineCollapsed && (
+        <ScrollArea className="max-h-80 overflow-y-auto">
+          <CardContent>
+            {isLoading && processedEvents.length === 0 && (
+              <div className="relative pl-8 pb-4">
+                <div className="absolute left-3 top-3.5 h-full w-0.5 bg-neutral-800" />
+                <div className="absolute left-0.5 top-2 h-5 w-5 rounded-full bg-neutral-800 flex items-center justify-center ring-4 ring-neutral-900">
+                  <Loader2 className="h-3 w-3 text-neutral-400 animate-spin" />
+                </div>
+                <div>
+                  <p className="text-sm text-neutral-300 font-medium">
+                    Thinking...
+                  </p>
+                </div>
+              </div>
+            )}
+            {processedEvents.length > 0 ? (
+              <div className="space-y-0">
+                {processedEvents.map((eventItem, index) => (
+                  <div key={index} className="relative pl-8 pb-4">
+                    {index < processedEvents.length - 1 ||
+                    (isLoading && index === processedEvents.length - 1) ? (
+                      <div className="absolute left-3 top-3.5 h-full w-0.5 bg-neutral-600" />
+                    ) : null}
+                    <div className="absolute left-0.5 top-2 h-6 w-6 rounded-full bg-neutral-600 flex items-center justify-center ring-4 ring-neutral-700">
+                      {getEventIcon(eventItem.title, index)}
+                    </div>
+                    <div>
+                      <p className="text-sm text-neutral-200 font-medium mb-0.5">
+                        {eventItem.title}
+                      </p>
+                      <div className="text-xs text-neutral-300 leading-relaxed">
+                        {isJsonData(eventItem.data) ? (
+                          <pre className="bg-neutral-800 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap">
+                            {formatEventData(eventItem.data)}
+                          </pre>
+                        ) : (
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => <span>{children}</span>,
+                              a: ({ href, children }) => (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-400 hover:text-blue-300 underline"
+                                >
+                                  {children}
+                                </a>
+                              ),
+                              code: ({ children }) => (
+                                <code className="bg-neutral-800 px-1 py-0.5 rounded text-xs">
+                                  {children}
+                                </code>
+                              ),
+                            }}
+                          >
+                            {formatEventData(eventItem.data)}
+                          </ReactMarkdown>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isLoading && processedEvents.length > 0 && (
+                  <div className="relative pl-8 pb-4">
+                    <div className="absolute left-0.5 top-2 h-5 w-5 rounded-full bg-neutral-600 flex items-center justify-center ring-4 ring-neutral-700">
+                      <Loader2 className="h-3 w-3 text-neutral-400 animate-spin" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-neutral-300 font-medium">
+                        Thinking...
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : !isLoading ? ( // Only show "No activity" if not loading and no events
+              <div className="flex flex-col items-center justify-center h-full text-neutral-500 pt-10">
+                <Info className="h-6 w-6 mb-3" />
+                <p className="text-sm">No activity to display.</p>
+                <p className="text-xs text-neutral-600 mt-1">
+                  Timeline will update during processing.
+                </p>
+              </div>
+            ) : null}
+          </CardContent>
+        </ScrollArea>
+      )}
+    </Card>
+  );
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ChatMessagesView.tsx
+================================================
+import type React from "react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2, Copy, CopyCheck } from "lucide-react";
+import { InputForm } from "@/components/InputForm";
+import { Button } from "@/components/ui/button";
+import { useState, ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from 'remark-gfm';
+import { cn } from "@/utils";
+import { Badge } from "@/components/ui/badge";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
+
+// Markdown component props type from former ReportView
+type MdComponentProps = {
+  className?: string;
+  children?: ReactNode;
+  [key: string]: any;
+};
+
+interface ProcessedEvent {
+  title: string;
+  data: any;
+}
+
+// Markdown components (from former ReportView.tsx)
+const mdComponents = {
+  h1: ({ className, children, ...props }: MdComponentProps) => (
+    <h1 className={cn("text-2xl font-bold mt-4 mb-2", className)} {...props}>
+      {children}
+    </h1>
+  ),
+  h2: ({ className, children, ...props }: MdComponentProps) => (
+    <h2 className={cn("text-xl font-bold mt-3 mb-2", className)} {...props}>
+      {children}
+    </h2>
+  ),
+  h3: ({ className, children, ...props }: MdComponentProps) => (
+    <h3 className={cn("text-lg font-bold mt-3 mb-1", className)} {...props}>
+      {children}
+    </h3>
+  ),
+  p: ({ className, children, ...props }: MdComponentProps) => (
+    <p className={cn("mb-3 leading-7", className)} {...props}>
+      {children}
+    </p>
+  ),
+  a: ({ className, children, href, ...props }: MdComponentProps) => (
+    <Badge className="text-xs mx-0.5">
+      <a
+        className={cn("text-blue-400 hover:text-blue-300 text-xs", className)}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        {children}
+      </a>
+    </Badge>
+  ),
+  ul: ({ className, children, ...props }: MdComponentProps) => (
+    <ul className={cn("list-disc pl-6 mb-3", className)} {...props}>
+      {children}
+    </ul>
+  ),
+  ol: ({ className, children, ...props }: MdComponentProps) => (
+    <ol className={cn("list-decimal pl-6 mb-3", className)} {...props}>
+      {children}
+    </ol>
+  ),
+  li: ({ className, children, ...props }: MdComponentProps) => (
+    <li className={cn("mb-1", className)} {...props}>
+      {children}
+    </li>
+  ),
+  blockquote: ({ className, children, ...props }: MdComponentProps) => (
+    <blockquote
+      className={cn(
+        "border-l-4 border-neutral-600 pl-4 italic my-3 text-sm",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </blockquote>
+  ),
+  code: ({ className, children, ...props }: MdComponentProps) => (
+    <code
+      className={cn(
+        "bg-neutral-900 rounded px-1 py-0.5 font-mono text-xs",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </code>
+  ),
+  pre: ({ className, children, ...props }: MdComponentProps) => (
+    <pre
+      className={cn(
+        "bg-neutral-900 p-3 rounded-lg overflow-x-auto font-mono text-xs my-3",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </pre>
+  ),
+  hr: ({ className, ...props }: MdComponentProps) => (
+    <hr className={cn("border-neutral-600 my-4", className)} {...props} />
+  ),
+  table: ({ className, children, ...props }: MdComponentProps) => (
+    <div className="my-3 overflow-x-auto">
+      <table className={cn("border-collapse w-full", className)} {...props}>
+        {children}
+      </table>
+    </div>
+  ),
+  th: ({ className, children, ...props }: MdComponentProps) => (
+    <th
+      className={cn(
+        "border border-neutral-600 px-3 py-2 text-left font-bold",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </th>
+  ),
+  td: ({ className, children, ...props }: MdComponentProps) => (
+    <td
+      className={cn("border border-neutral-600 px-3 py-2", className)}
+      {...props}
+    >
+      {children}
+    </td>
+  ),
+};
+
+// Props for HumanMessageBubble
+interface HumanMessageBubbleProps {
+  message: { content: string; id: string };
+  mdComponents: typeof mdComponents;
+}
+
+// HumanMessageBubble Component
+const HumanMessageBubble: React.FC<HumanMessageBubbleProps> = ({
+  message,
+  mdComponents,
+}) => {
+  return (
+    <div className="text-white rounded-3xl break-words min-h-7 bg-neutral-700 max-w-[100%] sm:max-w-[90%] px-4 pt-3 rounded-br-lg">
+      <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>
+        {message.content}
+      </ReactMarkdown>
+    </div>
+  );
+};
+
+// Props for AiMessageBubble
+interface AiMessageBubbleProps {
+  message: { content: string; id: string };
+  mdComponents: typeof mdComponents;
+  handleCopy: (text: string, messageId: string) => void;
+  copiedMessageId: string | null;
+  agent?: string;
+  finalReportWithCitations?: boolean;
+  processedEvents: ProcessedEvent[];
+  websiteCount: number;
+  isLoading: boolean;
+}
+
+// AiMessageBubble Component
+const AiMessageBubble: React.FC<AiMessageBubbleProps> = ({
+  message,
+  mdComponents,
+  handleCopy,
+  copiedMessageId,
+  agent,
+  finalReportWithCitations,
+  processedEvents,
+  websiteCount,
+  isLoading,
+}) => {
+  // Show ActivityTimeline if we have processedEvents (this will be the first AI message)
+  const shouldShowTimeline = processedEvents.length > 0;
+  
+  // Condition for DIRECT DISPLAY (interactive_planner_agent OR final report)
+  const shouldDisplayDirectly = 
+    agent === "interactive_planner_agent" || 
+    (agent === "report_composer_with_citations" && finalReportWithCitations);
+  
+  if (shouldDisplayDirectly) {
+    // Direct display - show content with copy button, and timeline if available
+    return (
+      <div className="relative break-words flex flex-col w-full">
+        {/* Show timeline for interactive_planner_agent if available */}
+        {shouldShowTimeline && agent === "interactive_planner_agent" && (
+          <div className="w-full mb-2">
+            <ActivityTimeline 
+              processedEvents={processedEvents}
+              isLoading={isLoading}
+              websiteCount={websiteCount}
+            />
+          </div>
+        )}
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+          <button
+            onClick={() => handleCopy(message.content, message.id)}
+            className="p-1 hover:bg-neutral-700 rounded"
+          >
+            {copiedMessageId === message.id ? (
+              <CopyCheck className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4 text-neutral-400" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  } else if (shouldShowTimeline) {
+    // First AI message with timeline only (no direct content display)
+    return (
+      <div className="relative break-words flex flex-col w-full">
+        <div className="w-full">
+          <ActivityTimeline 
+            processedEvents={processedEvents}
+            isLoading={isLoading}
+            websiteCount={websiteCount}
+          />
+        </div>
+        {/* Only show accumulated content if it's not empty and not from research agents */}
+        {message.content && message.content.trim() && agent !== "interactive_planner_agent" && (
+          <div className="flex items-start gap-3 mt-2">
+            <div className="flex-1">
+              <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+            </div>
+            <button
+              onClick={() => handleCopy(message.content, message.id)}
+              className="p-1 hover:bg-neutral-700 rounded"
+            >
+              {copiedMessageId === message.id ? (
+                <CopyCheck className="h-4 w-4 text-green-500" />
+              ) : (
+                <Copy className="h-4 w-4 text-neutral-400" />
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  } else {
+    // Fallback for other messages - just show content
+    return (
+      <div className="relative break-words flex flex-col w-full">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+          <button
+            onClick={() => handleCopy(message.content, message.id)}
+            className="p-1 hover:bg-neutral-700 rounded"
+          >
+            {copiedMessageId === message.id ? (
+              <CopyCheck className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4 text-neutral-400" />
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+};
+
+interface ChatMessagesViewProps {
+  messages: { type: "human" | "ai"; content: string; id: string; agent?: string; finalReportWithCitations?: boolean }[];
+  isLoading: boolean;
+  scrollAreaRef: React.RefObject<HTMLDivElement | null>;
+  onSubmit: (query: string) => void;
+  onCancel: () => void;
+  displayData: string | null;
+  messageEvents: Map<string, ProcessedEvent[]>;
+  websiteCount: number;
+}
+
+export function ChatMessagesView({
+  messages,
+  isLoading,
+  scrollAreaRef,
+  onSubmit,
+  onCancel,
+  messageEvents,
+  websiteCount,
+}: ChatMessagesViewProps) {
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  const handleCopy = async (text: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMessageId(messageId);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy text:", err);
+    }
+  };
+
+  const handleNewChat = () => {
+    window.location.reload();
+  };
+
+  // Find the ID of the last AI message
+  const lastAiMessage = messages.slice().reverse().find(m => m.type === "ai");
+  const lastAiMessageId = lastAiMessage?.id;
+
+  return (
+    <div className="flex flex-col h-full w-full">
+      {/* Header with New Chat button */}
+      <div className="border-b border-neutral-700 p-4 bg-neutral-800">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <h1 className="text-lg font-semibold text-neutral-100">Chat</h1>
+          <Button
+            onClick={handleNewChat}
+            variant="outline"
+            className="bg-neutral-700 hover:bg-neutral-600 text-neutral-100 border-neutral-600 hover:border-neutral-500"
+          >
+            New Chat
+          </Button>
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col w-full">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 w-full">
+          <div className="p-4 md:p-6 space-y-2 max-w-4xl mx-auto">
+            {messages.map((message) => { // Removed index as it's not directly used for this logic
+              const eventsForMessage = message.type === "ai" ? (messageEvents.get(message.id) || []) : [];
+              
+              // Determine if the current AI message is the last one
+              const isCurrentMessageTheLastAiMessage = message.type === "ai" && message.id === lastAiMessageId;
+
+              return (
+                <div
+                  key={message.id}
+                  className={`flex ${message.type === "human" ? "justify-end" : "justify-start"}`}
+                >
+                  {message.type === "human" ? (
+                    <HumanMessageBubble
+                      message={message}
+                      mdComponents={mdComponents}
+                    />
+                  ) : (
+                    <AiMessageBubble
+                      message={message}
+                      mdComponents={mdComponents}
+                      handleCopy={handleCopy}
+                      copiedMessageId={copiedMessageId}
+                      agent={message.agent}
+                      finalReportWithCitations={message.finalReportWithCitations}
+                      processedEvents={eventsForMessage}
+                      // MODIFIED: Pass websiteCount only if it's the last AI message
+                      websiteCount={isCurrentMessageTheLastAiMessage ? websiteCount : 0}
+                      // MODIFIED: Pass isLoading only if it's the last AI message and global isLoading is true
+                      isLoading={isCurrentMessageTheLastAiMessage && isLoading}
+                    />
+                  )}
+                </div>
+              );
+            })}
+            {/* This global "Thinking..." indicator appears below all messages if isLoading is true */}
+            {/* It's independent of the per-timeline isLoading state */}
+            {isLoading && !lastAiMessage && messages.some(m => m.type === 'human') && (
+              <div className="flex justify-start">
+                <div className="flex items-center gap-2 text-neutral-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Thinking...</span>
+                </div>
+              </div>
+            )}
+             {/* Show "Thinking..." if the last message is human and we are loading, 
+                 or if there's an active AI message that is the last one and we are loading.
+                 The AiMessageBubble's internal isLoading will handle its own spinner.
+                 This one is for the general loading state at the bottom.
+             */}
+            {isLoading && messages.length > 0 && messages[messages.length -1].type === 'human' && (
+                 <div className="flex justify-start pl-10 pt-2"> {/* Adjusted padding to align similarly to AI bubble */}
+                    <div className="flex items-center gap-2 text-neutral-400">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Thinking...</span>
+                    </div>
+                </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+      <div className="border-t border-neutral-700 p-4 w-full">
+        <div className="max-w-3xl mx-auto">
+          <InputForm onSubmit={onSubmit} isLoading={isLoading} context="chat" />
+          {isLoading && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={onCancel}
+                className="text-red-400 hover:text-red-300"
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/InputForm.tsx
+================================================
+import { useState, useRef, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Send } from "lucide-react";
+
+interface InputFormProps {
+  onSubmit: (query: string) => void;
+  isLoading: boolean;
+  context?: 'homepage' | 'chat'; // Add new context prop
+}
+
+export function InputForm({ onSubmit, isLoading, context = 'homepage' }: InputFormProps) {
+  const [inputValue, setInputValue] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputValue.trim() && !isLoading) {
+      onSubmit(inputValue.trim());
+      setInputValue("");
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+  const placeholderText =
+    context === 'chat'
+      ? "Respond to the Agent, refine the plan, or type 'Looks good'..."
+      : "Ask me anything... e.g., A report on the latest Google I/O";
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <div className="flex items-end space-x-2">
+        <Textarea
+          ref={textareaRef}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholderText}
+          rows={1}
+          className="flex-1 resize-none pr-10 min-h-[40px]"
+        />
+        <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()}>
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/WelcomeScreen.tsx
+================================================
+import { Button } from "@/components/ui/button";
+import { InputForm } from "@/components/InputForm";
+
+interface WelcomeScreenProps {
+  handleSubmit: (query: string) => void;
+  isLoading: boolean;
+  onCancel: () => void;
+}
+
+export function WelcomeScreen({
+  handleSubmit,
+  isLoading,
+  onCancel,
+}: WelcomeScreenProps) {
+  return (
+    // This container fills the space provided by its parent layout (e.g., the left panel in a split view)
+    // and centers its content (the card) within itself.
+    <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden relative">
+      
+      {/* The "Card" Container */}
+      {/* This div now holds the card's styling: background, blur, padding, border, shadow, and hover effect */}
+      <div className="w-full max-w-2xl z-10
+                      bg-neutral-900/50 backdrop-blur-md 
+                      p-8 rounded-2xl border border-neutral-700 
+                      shadow-2xl shadow-black/60 
+                      transition-all duration-300 hover:border-neutral-600">
+        
+        {/* Header section of the card */}
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold text-white flex items-center justify-center gap-3">
+            ✨ Deep Search - ADK 🚀
+          </h1>
+          <p className="text-lg text-neutral-300 max-w-md mx-auto">
+            Turns your questions into comprehensive reports!
+          </p>
+        </div>
+
+        {/* Input form section of the card */}
+        <div className="mt-8">
+          <InputForm onSubmit={handleSubmit} isLoading={isLoading} context="homepage" />
+          {isLoading && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={onCancel}
+                className="text-red-400 hover:text-red-300 hover:bg-red-900/20 border-red-700/50" // Enhanced cancel button
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/badge.tsx
+================================================
+import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+
+import { cn } from "@/utils"
+
+const badgeVariants = cva(
+  "inline-flex items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden",
+  {
+    variants: {
+      variant: {
+        default:
+          "border-transparent bg-primary text-primary-foreground [a&]:hover:bg-primary/90",
+        secondary:
+          "border-transparent bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90",
+        destructive:
+          "border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+        outline:
+          "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+
+function Badge({
+  className,
+  variant,
+  asChild = false,
+  ...props
+}: React.ComponentProps<"span"> &
+  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+  const Comp = asChild ? Slot : "span"
+
+  return (
+    <Comp
+      data-slot="badge"
+      className={cn(badgeVariants({ variant }), className)}
+      {...props}
+    />
+  )
+}
+
+export { Badge, badgeVariants }
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/button.tsx
+================================================
+import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+
+import { cn } from "@/utils"
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  {
+    variants: {
+      variant: {
+        default:
+          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+        destructive:
+          "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
+        outline:
+          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
+        secondary:
+          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
+        ghost:
+          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-9 px-4 py-2 has-[>svg]:px-3",
+        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
+        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+        icon: "size-9",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  ...props
+}: React.ComponentProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean
+  }) {
+  const Comp = asChild ? Slot : "button"
+
+  return (
+    <Comp
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Button, buttonVariants }
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/card.tsx
+================================================
+import * as React from "react"
+
+import { cn } from "@/utils"
+
+function Card({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card"
+      className={cn(
+        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-header"
+      className={cn(
+        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-title"
+      className={cn("leading-none font-semibold", className)}
+      {...props}
+    />
+  )
+}
+
+function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-description"
+      className={cn("text-muted-foreground text-sm", className)}
+      {...props}
+    />
+  )
+}
+
+function CardAction({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-action"
+      className={cn(
+        "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardContent({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-content"
+      className={cn("px-6", className)}
+      {...props}
+    />
+  )
+}
+
+function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="card-footer"
+      className={cn("flex items-center px-6 [.border-t]:pt-6", className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardAction,
+  CardDescription,
+  CardContent,
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/input.tsx
+================================================
+import * as React from "react"
+
+import { cn } from "@/utils"
+
+function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+  return (
+    <input
+      type={type}
+      data-slot="input"
+      className={cn(
+        "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input flex h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Input }
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/scroll-area.tsx
+================================================
+import * as React from "react"
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area"
+
+import { cn } from "@/utils"
+
+function ScrollArea({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+  return (
+    <ScrollAreaPrimitive.Root
+      data-slot="scroll-area"
+      className={cn("relative", className)}
+      {...props}
+    >
+      <ScrollAreaPrimitive.Viewport
+        data-slot="scroll-area-viewport"
+        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+      >
+        {children}
+      </ScrollAreaPrimitive.Viewport>
+      <ScrollBar />
+      <ScrollAreaPrimitive.Corner />
+    </ScrollAreaPrimitive.Root>
+  )
+}
+
+function ScrollBar({
+  className,
+  orientation = "vertical",
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>) {
+  return (
+    <ScrollAreaPrimitive.ScrollAreaScrollbar
+      data-slot="scroll-area-scrollbar"
+      orientation={orientation}
+      className={cn(
+        "flex touch-none p-px transition-colors select-none",
+        orientation === "vertical" &&
+        "h-full w-2.5 border-l border-l-transparent",
+        orientation === "horizontal" &&
+        "h-2.5 flex-col border-t border-t-transparent",
+        className
+      )}
+      {...props}
+    >
+      <ScrollAreaPrimitive.ScrollAreaThumb
+        data-slot="scroll-area-thumb"
+        className="bg-border relative flex-1 rounded-full"
+      />
+    </ScrollAreaPrimitive.ScrollAreaScrollbar>
+  )
+}
+
+export { ScrollArea, ScrollBar }
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/select.tsx
+================================================
+import * as React from "react"
+import * as SelectPrimitive from "@radix-ui/react-select"
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
+
+import { cn } from "@/utils"
+
+function Select({
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  return <SelectPrimitive.Root data-slot="select" {...props} />
+}
+
+function SelectGroup({
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Group>) {
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />
+}
+
+function SelectValue({
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Value>) {
+  return <SelectPrimitive.Value data-slot="select-value" {...props} />
+}
+
+function SelectTrigger({
+  className,
+  size = "default",
+  children,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
+  size?: "sm" | "default"
+}) {
+  return (
+    <SelectPrimitive.Trigger
+      data-slot="select-trigger"
+      data-size={size}
+      className={cn(
+        "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className
+      )}
+      {...props}
+    >
+      {children}
+      <SelectPrimitive.Icon asChild>
+        <ChevronDownIcon className="size-4 opacity-50" />
+      </SelectPrimitive.Icon>
+    </SelectPrimitive.Trigger>
+  )
+}
+
+function SelectContent({
+  className,
+  children,
+  position = "popper",
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  return (
+    <SelectPrimitive.Portal>
+      <SelectPrimitive.Content
+        data-slot="select-content"
+        className={cn(
+          "bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border shadow-md",
+          position === "popper" &&
+          "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+          className
+        )}
+        position={position}
+        {...props}
+      >
+        <SelectScrollUpButton />
+        <SelectPrimitive.Viewport
+          className={cn(
+            "p-1",
+            position === "popper" &&
+            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1"
+          )}
+        >
+          {children}
+        </SelectPrimitive.Viewport>
+        <SelectScrollDownButton />
+      </SelectPrimitive.Content>
+    </SelectPrimitive.Portal>
+  )
+}
+
+function SelectLabel({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Label>) {
+  return (
+    <SelectPrimitive.Label
+      data-slot="select-label"
+      className={cn("text-muted-foreground px-2 py-1.5 text-xs", className)}
+      {...props}
+    />
+  )
+}
+
+function SelectItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+  return (
+    <SelectPrimitive.Item
+      data-slot="select-item"
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        className
+      )}
+      {...props}
+    >
+      <span className="absolute right-2 flex size-3.5 items-center justify-center">
+        <SelectPrimitive.ItemIndicator>
+          <CheckIcon className="size-4" />
+        </SelectPrimitive.ItemIndicator>
+      </span>
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    </SelectPrimitive.Item>
+  )
+}
+
+function SelectSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Separator>) {
+  return (
+    <SelectPrimitive.Separator
+      data-slot="select-separator"
+      className={cn("bg-border pointer-events-none -mx-1 my-1 h-px", className)}
+      {...props}
+    />
+  )
+}
+
+function SelectScrollUpButton({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
+  return (
+    <SelectPrimitive.ScrollUpButton
+      data-slot="select-scroll-up-button"
+      className={cn(
+        "flex cursor-default items-center justify-center py-1",
+        className
+      )}
+      {...props}
+    >
+      <ChevronUpIcon className="size-4" />
+    </SelectPrimitive.ScrollUpButton>
+  )
+}
+
+function SelectScrollDownButton({
+  className,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
+  return (
+    <SelectPrimitive.ScrollDownButton
+      data-slot="select-scroll-down-button"
+      className={cn(
+        "flex cursor-default items-center justify-center py-1",
+        className
+      )}
+      {...props}
+    >
+      <ChevronDownIcon className="size-4" />
+    </SelectPrimitive.ScrollDownButton>
+  )
+}
+
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectScrollDownButton,
+  SelectScrollUpButton,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+}
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/tabs.tsx
+================================================
+import * as React from "react"
+import * as TabsPrimitive from "@radix-ui/react-tabs"
+
+import { cn } from "@/utils"
+
+function Tabs({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  return (
+    <TabsPrimitive.Root
+      data-slot="tabs"
+      className={cn("flex flex-col gap-2", className)}
+      {...props}
+    />
+  )
+}
+
+function TabsList({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.List>) {
+  return (
+    <TabsPrimitive.List
+      data-slot="tabs-list"
+      className={cn(
+        "bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TabsTrigger({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+  return (
+    <TabsPrimitive.Trigger
+      data-slot="tabs-trigger"
+      className={cn(
+        "data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 text-foreground dark:text-muted-foreground inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+function TabsContent({
+  className,
+  ...props
+}: React.ComponentProps<typeof TabsPrimitive.Content>) {
+  return (
+    <TabsPrimitive.Content
+      data-slot="tabs-content"
+      className={cn("flex-1 outline-none", className)}
+      {...props}
+    />
+  )
+}
+
+export { Tabs, TabsList, TabsTrigger, TabsContent }
+
+
+
+================================================
+FILE: python/agents/deep-search/frontend/src/components/ui/textarea.tsx
+================================================
+import * as React from "react"
+
+import { cn } from "@/utils"
+
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+  return (
+    <textarea
+      data-slot="textarea"
+      className={cn(
+        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Textarea }
+
+
